@@ -4,7 +4,7 @@
 
 OpenHub 是一个免费开源的桌面客户端，用于发现、收藏、查看和下载 GitHub 上的开源应用、开发者工具和命令行工具。当前包含 macOS 原生版和独立 Windows/Tauri 版源码。
 
-![OpenHub icon](Assets/app-icon-source.png?width=200&height=200)
+<img src="Assets/app-icon-source.png" alt="OpenHub icon" width="128">
 
 ## 特性
 
@@ -86,7 +86,7 @@ OpenHub/
 
 OpenHub is a free and open-source desktop client for discovering, collecting, viewing, 和 downloading open-source apps, developer tools, 和 CLI utilities from GitHub. It currently includes the native macOS app and a separate Windows/Tauri source tree.
 
-![OpenHub icon](Assets/app-icon-source.png?width=200&height=200)
+<img src="Assets/app-icon-source.png" alt="OpenHub icon" width="128">
 
 ## Features
 
