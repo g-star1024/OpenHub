@@ -21,6 +21,10 @@ OpenHub 是一个免费开源的桌面客户端，用于发现、收藏、查看
 - GitHub 登录、个人中心、我的仓库与星标仓库
 - Fork 仓库、检索个人仓库、克隆到本地工作区
 - 内置轻量代码编辑器，支持保存、commit 并同步到 GitHub
+- 代码编辑器支持基础语法高亮、文件搜索、Git 状态和 diff 概览
+- 下载任务进度展示，完成后可直接打开安装包或定位本地文件夹
+- 下载列表支持取消下载和删除下载记录
+- 代码工作区支持一键同步当前仓库全部本地改动到 GitHub
 - 支持修改本地仓库路径
 - 代理设置，可加速 GitHub API 与 git clone / push
 - GitHub Token 存储在 macOS Keychain
@@ -107,6 +111,10 @@ OpenHub is a free and open-source desktop client for discovering, collecting, vi
 - GitHub sign-in, account center, owned repositories, and starred repositories
 - Fork repositories, search owned repositories, and clone into a local workspace
 - Lightweight built-in code editor with save, commit, and GitHub sync
+- Basic syntax highlighting, file search, Git status, and diff overview
+- Download progress list with open/install and local folder actions
+- Cancel active downloads and delete download records
+- One-click sync for all local changes in the current repository
 - Configurable local repository workspace path
 - Proxy settings for GitHub API and git clone / push
 - GitHub Token stored in macOS Keychain

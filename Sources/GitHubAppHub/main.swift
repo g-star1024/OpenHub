@@ -70,6 +70,47 @@ struct DownloadRecord: Identifiable, Codable, Hashable {
     let checksum: String?
 }
 
+struct DownloadJob: Identifiable, Hashable {
+    enum State: String {
+        case downloading = "下载中"
+        case completed = "已完成"
+        case failed = "失败"
+        case cancelled = "已取消"
+    }
+
+    let id: UUID
+    let appName: String
+    let assetName: String
+    let sourceName: String
+    var progress: Double
+    var state: State
+    var savedPath: String?
+    var message: String
+    var cancel: (() -> Void)?
+
+    static func == (lhs: DownloadJob, rhs: DownloadJob) -> Bool {
+        lhs.id == rhs.id &&
+        lhs.appName == rhs.appName &&
+        lhs.assetName == rhs.assetName &&
+        lhs.sourceName == rhs.sourceName &&
+        lhs.progress == rhs.progress &&
+        lhs.state == rhs.state &&
+        lhs.savedPath == rhs.savedPath &&
+        lhs.message == rhs.message
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(appName)
+        hasher.combine(assetName)
+        hasher.combine(sourceName)
+        hasher.combine(progress)
+        hasher.combine(state)
+        hasher.combine(savedPath)
+        hasher.combine(message)
+    }
+}
+
 struct DownloadSource: Identifiable, Codable, Hashable {
     let id: String
     var name: String
@@ -342,7 +383,7 @@ enum L10n {
         "recommendedSubtitle": "GitHub 热门前 100，滚动浏览",
         "searchSubtitle": "按仓库名精确度、stars 和更新时间排序",
         "searchPlaceholder": "输入仓库名可精确排序，例如 iina、rectangle、utm",
-        "submitProject": "提交项目",
+        "submitProject": "创建项目",
         "continueLoading": "继续加载热门项目...",
         "repositoryDocs": "仓库文档",
         "downloadAssets": "下载资源",
@@ -410,7 +451,7 @@ enum L10n {
         "recommendedSubtitle": "GitHub Top 100, scroll to browse",
         "searchSubtitle": "Ranked by repository-name match, stars, and update time",
         "searchPlaceholder": "Type a repository name, e.g. iina, rectangle, utm",
-        "submitProject": "Submit",
+        "submitProject": "Create Project",
         "continueLoading": "Loading more popular projects...",
         "repositoryDocs": "Repository Docs",
         "downloadAssets": "Downloads",
@@ -831,6 +872,8 @@ final class AppStoreModel: ObservableObject {
     @Published var latestRelease: Release?
     @Published var favorites: [Repository] = []
     @Published var downloads: [DownloadRecord] = []
+    @Published var downloadJobs: [DownloadJob] = []
+    private var downloadTasks: [UUID: URLSessionTask] = [:]
     @Published var sources: [DownloadSource] = [
         DownloadSource(id: "github-original", name: "GitHub 原始源", type: "origin", enabled: true, urlTemplate: "{originalUrl}", priority: 0),
         DownloadSource(id: "custom-proxy", name: "自定义加速源", type: "proxy", enabled: false, urlTemplate: "https://example.com/{originalUrl}", priority: 50)
@@ -1443,10 +1486,14 @@ final class AppStoreModel: ObservableObject {
             status = "下载源 URL 无效"
             return
         }
+        let jobID = UUID()
+        downloadJobs.insert(DownloadJob(id: jobID, appName: repository.displayName, assetName: asset.name, sourceName: selectedSource.name, progress: 0, state: .downloading, savedPath: nil, message: "准备下载", cancel: { [weak self] in
+            Task { @MainActor in self?.cancelDownload(jobID) }
+        }), at: 0)
         do {
             status = "正在下载 \(asset.name)..."
-            downloadProgress = 0.2
-            let (tempURL, _) = try await URLSession.shared.download(from: sourceURL)
+            downloadProgress = 0.05
+            let (tempURL, _) = try await downloadFile(from: sourceURL, jobID: jobID)
             let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
                 .appendingPathComponent("OpenHub", isDirectory: true)
             try FileManager.default.createDirectory(at: downloadsURL, withIntermediateDirectories: true)
@@ -1460,12 +1507,85 @@ final class AppStoreModel: ObservableObject {
             let record = DownloadRecord(id: UUID(), appName: repository.displayName, assetName: asset.name, sourceName: selectedSource.name, originalURL: asset.browserDownloadURL, savedPath: destination.path, downloadedAt: Date(), checksum: checksum)
             downloads.insert(record, at: 0)
             storage.save(downloads, key: "downloads")
+            updateDownloadJob(jobID, progress: 1, state: .completed, savedPath: destination.path, message: "下载完成，可打开安装")
+            downloadTasks.removeValue(forKey: jobID)
             status = "下载完成：\(asset.name)"
-            NSWorkspace.shared.activateFileViewerSelecting([destination])
         } catch {
             downloadProgress = 0
-            status = "下载失败，建议切换 GitHub 原始源重试：\(error.localizedDescription)"
+            downloadTasks.removeValue(forKey: jobID)
+            if (error as NSError).code == NSURLErrorCancelled {
+                updateDownloadJob(jobID, progress: 0, state: .cancelled, savedPath: nil, message: "用户已取消下载")
+                status = "已取消下载：\(asset.name)"
+            } else {
+                updateDownloadJob(jobID, progress: 0, state: .failed, savedPath: nil, message: error.localizedDescription)
+                status = "下载失败，建议切换 GitHub 原始源重试：\(error.localizedDescription)"
+            }
         }
+    }
+
+    private func downloadFile(from url: URL, jobID: UUID) async throws -> (URL, URLResponse) {
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                let task = URLSession.shared.downloadTask(with: url) { tempURL, response, error in
+                    Task { @MainActor in self.downloadTasks.removeValue(forKey: jobID) }
+                    if let error {
+                        continuation.resume(throwing: error)
+                        return
+                    }
+                    guard let tempURL, let response else {
+                        continuation.resume(throwing: NSError(domain: "OpenHub", code: -1, userInfo: [NSLocalizedDescriptionKey: "下载响应为空"]))
+                        return
+                    }
+                    continuation.resume(returning: (tempURL, response))
+                }
+                downloadTasks[jobID] = task
+                task.resume()
+                Task {
+                    while task.state == .running || task.state == .suspended {
+                        let completed = task.countOfBytesReceived
+                        let expected = task.countOfBytesExpectedToReceive
+                        if completed > 0 {
+                            let progress = expected > 0 ? min(Double(completed) / Double(expected), 0.98) : min(0.2 + Double(completed % 5_000_000) / 5_000_000 * 0.5, 0.85)
+                            await MainActor.run {
+                                self.updateDownloadJob(jobID, progress: progress, state: .downloading, savedPath: nil, message: "\(ByteCountFormatter.string(fromByteCount: completed, countStyle: .file)) / \(expected > 0 ? ByteCountFormatter.string(fromByteCount: expected, countStyle: .file) : "未知大小")")
+                                self.downloadProgress = progress
+                            }
+                        }
+                        try? await Task.sleep(nanoseconds: 250_000_000)
+                    }
+                }
+            }
+        } onCancel: {
+            Task { @MainActor in self.cancelDownload(jobID) }
+        }
+    }
+
+    private func updateDownloadJob(_ id: UUID, progress: Double, state: DownloadJob.State, savedPath: String?, message: String) {
+        guard let index = downloadJobs.firstIndex(where: { $0.id == id }) else { return }
+        downloadJobs[index].progress = progress
+        downloadJobs[index].state = state
+        if let savedPath { downloadJobs[index].savedPath = savedPath }
+        downloadJobs[index].message = message
+    }
+
+    func cancelDownload(_ id: UUID) {
+        downloadTasks[id]?.cancel()
+        downloadTasks.removeValue(forKey: id)
+        updateDownloadJob(id, progress: 0, state: .cancelled, savedPath: nil, message: "用户已取消下载")
+    }
+
+    func deleteDownloadJob(_ id: UUID) {
+        cancelDownload(id)
+        downloadJobs.removeAll { $0.id == id }
+    }
+
+    func deleteDownloadRecord(_ record: DownloadRecord, removeFile: Bool = false) {
+        if removeFile {
+            try? FileManager.default.removeItem(atPath: record.savedPath)
+        }
+        downloads.removeAll { $0.id == record.id }
+        storage.save(downloads, key: "downloads")
+        status = removeFile ? "已删除下载记录和本地文件" : "已删除下载记录"
     }
 
     private func sha256(of url: URL) throws -> String {
@@ -2108,28 +2228,127 @@ struct DownloadsView: View {
             Text("下载记录")
                 .font(.title2.bold())
                 .frame(height: 36, alignment: .leading)
-            if model.downloads.isEmpty {
+            if model.downloads.isEmpty && model.downloadJobs.isEmpty {
                 AppEmptyState(config: EmptyStateConfig(title: "还没有下载记录", message: "下载 Release 资源后，这里会保存来源、路径和 SHA256。", icon: "arrow.down.circle", primaryTitle: "去搜索", primaryAction: { model.navigate(to: .search) }))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                List(model.downloads) { record in
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(record.assetName).font(.headline)
-                        Text("\(record.appName) · \(record.sourceName)")
-                            .foregroundStyle(.secondary)
-                        Text(record.savedPath)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .contextMenu {
-                        Button("在 Finder 中显示") {
-                            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: record.savedPath)])
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        if !model.downloadJobs.isEmpty {
+                            Text("当前下载")
+                                .font(.headline)
+                            ForEach(model.downloadJobs) { job in
+                                DownloadJobRow(job: job)
+                            }
+                        }
+                        if !model.downloads.isEmpty {
+                            Text("历史记录")
+                                .font(.headline)
+                                .padding(.top, 8)
+                            ForEach(model.downloads) { record in
+                                DownloadRecordRow(record: record)
+                            }
                         }
                     }
+                    .padding(.vertical, 4)
                 }
             }
         }
         .padding(24)
+    }
+}
+
+struct DownloadJobRow: View {
+    @EnvironmentObject private var model: AppStoreModel
+    let job: DownloadJob
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: job.state == .completed ? "checkmark.circle.fill" : job.state == .failed ? "xmark.circle.fill" : "arrow.down.circle")
+                .font(.title2)
+                .foregroundStyle(job.state == .completed ? .green : job.state == .failed ? .red : .blue)
+                .frame(width: 34)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text(job.assetName)
+                        .font(.headline)
+                        .lineLimit(1)
+                    Spacer()
+                    Text(job.state.rawValue)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+                Text("\(job.appName) · \(job.sourceName) · \(job.message)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                ProgressView(value: job.progress)
+            }
+            if job.state == .downloading {
+                Button("取消") {
+                    job.cancel?()
+                }
+            }
+            if let path = job.savedPath, job.state == .completed {
+                Button("安装") {
+                    NSWorkspace.shared.open(URL(fileURLWithPath: path))
+                }
+                Button("文件夹") {
+                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+                }
+            }
+            if job.state != .downloading {
+                Button(role: .destructive) {
+                    model.deleteDownloadJob(job.id)
+                } label: {
+                    Label("删除", systemImage: "trash")
+                }
+            }
+        }
+        .padding(12)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+struct DownloadRecordRow: View {
+    @EnvironmentObject private var model: AppStoreModel
+    let record: DownloadRecord
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "shippingbox")
+                .font(.title2)
+                .foregroundStyle(.secondary)
+                .frame(width: 34)
+            VStack(alignment: .leading, spacing: 5) {
+                Text(record.assetName).font(.headline)
+                Text("\(record.appName) · \(record.sourceName)")
+                    .foregroundStyle(.secondary)
+                Text(record.savedPath)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+            Button("安装") {
+                NSWorkspace.shared.open(URL(fileURLWithPath: record.savedPath))
+            }
+            Button("文件夹") {
+                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: record.savedPath)])
+            }
+            Menu("删除") {
+                Button("仅删除记录") {
+                    model.deleteDownloadRecord(record)
+                }
+                Button("删除记录和本地文件", role: .destructive) {
+                    model.deleteDownloadRecord(record, removeFile: true)
+                }
+            }
+        }
+        .padding(12)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }
 
@@ -2485,52 +2704,207 @@ struct CodeWorkspaceView: View {
                     Button {
                         Task { await model.syncSelectedLocalRepository() }
                     } label: {
-                        Label("同步到 GitHub", systemImage: "arrow.up.circle")
+                        Label("同步全部到 GitHub", systemImage: "arrow.up.circle")
                     }
                     .disabled(model.selectedLocalRepository == nil)
                 }
                 .padding(14)
                 Divider()
-                TextEditor(text: $model.codeText)
-                    .font(.system(.body, design: .monospaced))
-                    .padding(12)
+                HighlightedCodeEditor(text: $model.codeText, fileName: model.selectedCodeFile?.relativePath ?? "")
                 Divider()
-                HStack(alignment: .top, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Git 变更")
-                            .font(.caption.weight(.semibold))
-                        ScrollView {
-                            Text(model.gitStatusText.isEmpty ? "暂无未提交变更" : model.gitStatusText)
-                                .font(.system(.caption, design: .monospaced))
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .frame(height: 74)
+                GitBottomPanel()
+            }
+        }
+    }
+}
+
+struct GitBottomPanel: View {
+    @EnvironmentObject private var model: AppStoreModel
+
+    var body: some View {
+        VStack(spacing: 10) {
+            HStack {
+                Label("Git 工作区", systemImage: "point.3.connected.trianglepath.dotted")
+                    .font(.headline)
+                Spacer()
+                Text(model.gitStatusText.isEmpty ? "工作区干净" : "有未提交变更")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(model.gitStatusText.isEmpty ? .green : .orange)
+            }
+            HStack(alignment: .top, spacing: 12) {
+                GitInfoCard(title: "变更", text: model.gitStatusText.isEmpty ? "暂无未提交变更" : model.gitStatusText, color: .blue)
+                GitInfoCard(title: "Diff", text: model.gitDiffText.isEmpty ? "暂无 diff" : model.gitDiffText, color: .purple)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("提交")
+                        .font(.caption.weight(.semibold))
+                    TextField("Commit message", text: $model.commitMessage)
+                        .textFieldStyle(.roundedBorder)
+                    Button {
+                        model.saveSelectedCodeFile()
+                        Task { await model.syncSelectedLocalRepository() }
+                    } label: {
+                        Label("保存并同步全部改动", systemImage: "arrow.up.circle")
+                            .frame(maxWidth: .infinity)
                     }
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Diff 概览")
-                            .font(.caption.weight(.semibold))
-                        ScrollView {
-                            Text(model.gitDiffText.isEmpty ? "暂无 diff" : model.gitDiffText)
-                                .font(.system(.caption, design: .monospaced))
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .frame(height: 74)
-                    }
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("提交")
-                            .font(.caption.weight(.semibold))
-                        TextField("Commit message", text: $model.commitMessage)
-                            .textFieldStyle(.roundedBorder)
-                        Button {
-                            Task { await model.syncSelectedLocalRepository() }
-                        } label: {
-                            Label("保存并同步到 GitHub", systemImage: "arrow.up.circle")
-                        }
-                        .disabled(model.selectedLocalRepository == nil)
-                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.selectedLocalRepository == nil)
                 }
                 .padding(12)
+                .frame(width: 260, height: 128, alignment: .topLeading)
+                .background(Color(nsColor: .windowBackgroundColor))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.black.opacity(0.08)))
             }
+        }
+        .padding(12)
+        .background(Color(nsColor: .controlBackgroundColor))
+    }
+}
+
+struct GitInfoCard: View {
+    let title: String
+    let text: String
+    let color: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Circle().fill(color).frame(width: 7, height: 7)
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                Spacer()
+            }
+            ScrollView {
+                Text(text)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 128, maxHeight: 128, alignment: .topLeading)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.black.opacity(0.08)))
+    }
+}
+
+struct HighlightedCodeEditor: NSViewRepresentable {
+    @Binding var text: String
+    let fileName: String
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text, fileName: fileName)
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSScrollView()
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = true
+        scrollView.autohidesScrollers = false
+        let textView = NSTextView()
+        textView.isRichText = false
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.allowsUndo = true
+        textView.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
+        textView.textContainerInset = NSSize(width: 12, height: 12)
+        textView.textContainer?.widthTracksTextView = false
+        textView.textContainer?.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.minSize = NSSize(width: 0, height: 0)
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.isHorizontallyResizable = true
+        textView.isVerticallyResizable = true
+        textView.autoresizingMask = [.width]
+        textView.delegate = context.coordinator
+        scrollView.documentView = textView
+        context.coordinator.textView = textView
+        context.coordinator.apply(text: text, fileName: fileName)
+        return scrollView
+    }
+
+    func updateNSView(_ nsView: NSScrollView, context: Context) {
+        context.coordinator.fileName = fileName
+        context.coordinator.apply(text: text, fileName: fileName)
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        @Binding var text: String
+        weak var textView: NSTextView?
+        var fileName: String
+        private var isApplying = false
+
+        init(text: Binding<String>, fileName: String) {
+            _text = text
+            self.fileName = fileName
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard !isApplying, let textView else { return }
+            text = textView.string
+            highlightCurrentText()
+        }
+
+        func apply(text: String, fileName: String) {
+            guard let textView else { return }
+            if textView.string != text {
+                isApplying = true
+                textView.string = text
+                isApplying = false
+            }
+            highlightCurrentText()
+        }
+
+        private func highlightCurrentText() {
+            guard let textView else { return }
+            let selectedRanges = textView.selectedRanges
+            let attributed = CodeHighlighter.highlight(textView.string, fileName: fileName)
+            isApplying = true
+            textView.textStorage?.setAttributedString(attributed)
+            textView.selectedRanges = selectedRanges
+            isApplying = false
+        }
+    }
+}
+
+enum CodeHighlighter {
+    static func highlight(_ text: String, fileName: String) -> NSAttributedString {
+        let baseFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        let result = NSMutableAttributedString(string: text, attributes: [
+            .font: baseFont,
+            .foregroundColor: NSColor.labelColor,
+            .backgroundColor: NSColor.textBackgroundColor
+        ])
+        let fullRange = NSRange(location: 0, length: (text as NSString).length)
+        apply(pattern: #""(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'"#, color: .systemGreen, in: result, range: fullRange)
+        apply(pattern: #"//.*|#.*"#, color: .systemGray, in: result, range: fullRange)
+        apply(pattern: #"\b([0-9]+|true|false|null|nil)\b"#, color: .systemOrange, in: result, range: fullRange)
+        let ext = URL(fileURLWithPath: fileName).pathExtension.lowercased()
+        let keywords: String
+        switch ext {
+        case "swift":
+            keywords = "func|let|var|struct|class|enum|protocol|extension|import|return|guard|if|else|switch|case|for|while|do|catch|try|await|async|throws|private|public|final|static"
+        case "js", "ts":
+            keywords = "function|const|let|var|class|import|export|return|if|else|switch|case|for|while|await|async|try|catch|new|this|type|interface"
+        case "rs":
+            keywords = "fn|let|mut|struct|enum|impl|use|pub|crate|mod|match|if|else|loop|while|for|async|await|return|Result|Option"
+        case "json":
+            keywords = "true|false|null"
+        default:
+            keywords = "func|function|class|struct|import|return|if|else|for|while|let|var|const"
+        }
+        apply(pattern: "\\b(\(keywords))\\b", color: .systemBlue, font: .monospacedSystemFont(ofSize: 13, weight: .semibold), in: result, range: fullRange)
+        return result
+    }
+
+    private static func apply(pattern: String, color: NSColor, font: NSFont? = nil, in result: NSMutableAttributedString, range: NSRange) {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return }
+        regex.enumerateMatches(in: result.string, options: [], range: range) { match, _, _ in
+            guard let match else { return }
+            result.addAttribute(.foregroundColor, value: color, range: match.range)
+            if let font { result.addAttribute(.font, value: font, range: match.range) }
         }
     }
 }
