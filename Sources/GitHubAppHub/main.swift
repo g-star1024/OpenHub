@@ -88,6 +88,33 @@ struct DownloadSource: Identifiable, Codable, Hashable {
     }
 }
 
+struct LocalRepository: Identifiable, Codable, Hashable {
+    let id: UUID
+    var fullName: String
+    var path: String
+    var remoteURL: String
+    var updatedAt: Date
+}
+
+struct CodeFile: Identifiable, Hashable {
+    let id = UUID()
+    let relativePath: String
+    let absolutePath: String
+}
+
+struct ProxySettings: Codable, Hashable {
+    var enabled: Bool
+    var server: String
+
+    var normalizedURL: URL? {
+        guard enabled else { return nil }
+        let trimmed = server.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if trimmed.contains("://") { return URL(string: trimmed) }
+        return URL(string: "http://\(trimmed)")
+    }
+}
+
 struct GitHubUser: Identifiable, Codable, Hashable {
     let id: Int
     let login: String
@@ -224,6 +251,7 @@ enum AppSection: String, CaseIterable, Identifiable {
     case catalog = "推荐"
     case search = "搜索"
     case collections = "收藏"
+    case code = "代码"
     case downloads = "下载"
     case updates = "更新"
     case settings = "设置"
@@ -235,6 +263,7 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .catalog: "sparkles"
         case .search: "magnifyingglass"
         case .collections: "star"
+        case .code: "curlybraces.square"
         case .downloads: "arrow.down.circle"
         case .updates: "clock.arrow.circlepath"
         case .settings: "gearshape"
@@ -301,6 +330,7 @@ enum L10n {
         "category.hardware": "硬件外设",
         "search": "搜索",
         "favorites": "收藏",
+        "code": "代码",
         "downloads": "下载",
         "updates": "更新",
         "settings": "设置",
@@ -368,6 +398,7 @@ enum L10n {
         "category.hardware": "Hardware",
         "search": "Search",
         "favorites": "Favorites",
+        "code": "Code",
         "downloads": "Downloads",
         "updates": "Updates",
         "settings": "Settings",
@@ -466,6 +497,7 @@ enum ReadableTextSanitizer {
 @MainActor
 final class GitHubClient {
     private let decoder: JSONDecoder
+    var proxyURL: URL?
 
     init() {
         decoder = JSONDecoder()
@@ -514,9 +546,16 @@ final class GitHubClient {
         return items.map(repository(from:))
     }
 
+    func forkRepository(owner: String, repo: String, token: String) async throws -> Repository {
+        let url = URL(string: "https://api.github.com/repos/\(owner)/\(repo)/forks")!
+        let data = try await request(url, method: "POST", token: token, body: Data("{}".utf8))
+        let item = try decoder.decode(RepositoryItem.self, from: data)
+        return repository(from: item)
+    }
+
     func starRepository(owner: String, repo: String, token: String) async throws {
         let url = URL(string: "https://api.github.com/user/starred/\(owner)/\(repo)")!
-        _ = try await request(url, method: "PUT", token: token, emptySuccessCodes: [204])
+        _ = try await request(url, method: "PUT", token: token, emptySuccessCodes: [204], body: Data())
     }
 
     func unstarRepository(owner: String, repo: String, token: String) async throws {
@@ -562,24 +601,67 @@ final class GitHubClient {
         return response.items.map(repository(from:))
     }
 
-    private func request(_ url: URL, method: String = "GET", token: String?, emptySuccessCodes: Set<Int> = []) async throws -> Data {
+    private func request(_ url: URL, method: String = "GET", token: String?, emptySuccessCodes: Set<Int> = [], body: Data? = nil) async throws -> Data {
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("OpenHub-MVP", forHTTPHeaderField: "User-Agent")
+        request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = body
         if let token, !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let session = sessionForCurrentProxy()
+        let (data, response) = try await session.data(for: request)
         if let http = response as? HTTPURLResponse, emptySuccessCodes.contains(http.statusCode) {
             return data
         }
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            let message = String(data: data, encoding: .utf8) ?? ""
+            if http.statusCode == 403, url.path.contains("/user/starred") {
+                throw NSError(domain: "GitHub", code: http.statusCode, userInfo: [
+                    NSLocalizedDescriptionKey: "GitHub Star 权限不足：请确认 Token 具备 Starring 写权限；classic token 可尝试 public_repo/repo 权限。\(message.isEmpty ? "" : " GitHub: \(message)")"
+                ])
+            }
             throw NSError(domain: "GitHub", code: http.statusCode, userInfo: [
-                NSLocalizedDescriptionKey: "GitHub API 请求失败：HTTP \(http.statusCode)"
+                NSLocalizedDescriptionKey: "GitHub API 请求失败：HTTP \(http.statusCode)\(message.isEmpty ? "" : " \(message)")"
             ])
         }
         return data
+    }
+
+    private func sessionForCurrentProxy() -> URLSession {
+        guard let proxyURL,
+              let host = proxyURL.host,
+              let port = proxyURL.port else {
+            return .shared
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        let scheme = proxyURL.scheme?.lowercased() ?? "http"
+        var proxy: [AnyHashable: Any]
+        if scheme.hasPrefix("socks") {
+            proxy = [
+                kCFNetworkProxiesSOCKSEnable as String: true,
+                kCFNetworkProxiesSOCKSProxy as String: host,
+                kCFNetworkProxiesSOCKSPort as String: port
+            ]
+        } else {
+            proxy = [
+                kCFNetworkProxiesHTTPEnable as String: true,
+                kCFNetworkProxiesHTTPProxy as String: host,
+                kCFNetworkProxiesHTTPPort as String: port,
+                kCFNetworkProxiesHTTPSEnable as String: true,
+                kCFNetworkProxiesHTTPSProxy as String: host,
+                kCFNetworkProxiesHTTPSPort as String: port
+            ]
+        }
+        if let user = proxyURL.user, let password = proxyURL.password {
+            proxy[kCFProxyUsernameKey as String] = user
+            proxy[kCFProxyPasswordKey as String] = password
+        }
+        configuration.connectionProxyDictionary = proxy
+        return URLSession(configuration: configuration)
     }
 
     private func rerank(_ repos: [Repository], query: String) -> [Repository] {
@@ -755,6 +837,7 @@ final class AppStoreModel: ObservableObject {
     ]
     @Published var selectedSourceID = "github-original"
     @Published var appLanguage: AppLanguage = .system
+    @Published var proxySettings = ProxySettings(enabled: false, server: "")
     @Published var token = ""
     @Published var status = "准备就绪"
     @Published var isLoading = false
@@ -768,6 +851,18 @@ final class AppStoreModel: ObservableObject {
     @Published var userRepositories: [Repository] = []
     @Published var starredRepositories: [Repository] = []
     @Published var isAccountLoading = false
+    @Published var accountRepositoryQuery = ""
+    @Published var workspacePath = ""
+    @Published var localRepositories: [LocalRepository] = []
+    @Published var selectedLocalRepository: LocalRepository?
+    @Published var codeFiles: [CodeFile] = []
+    @Published var selectedCodeFile: CodeFile?
+    @Published var codeText = ""
+    @Published var codeSearch = ""
+    @Published var gitStatusText = ""
+    @Published var gitDiffText = ""
+    @Published var currentBranch = ""
+    @Published var commitMessage = "Update from OpenHub"
 
     private let client = GitHubClient()
     private let storage = LocalStorage()
@@ -779,9 +874,14 @@ final class AppStoreModel: ObservableObject {
         sources = storage.load([DownloadSource].self, key: "sources") ?? sources
         selectedSourceID = storage.load(String.self, key: "selectedSourceID") ?? selectedSourceID
         appLanguage = storage.load(AppLanguage.self, key: "appLanguage") ?? .system
+        proxySettings = storage.load(ProxySettings.self, key: "proxySettings") ?? proxySettings
+        workspacePath = storage.load(String.self, key: "workspacePath") ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("OpenHubRepos", isDirectory: true).path
+        localRepositories = storage.load([LocalRepository].self, key: "localRepositories") ?? []
+        selectedLocalRepository = localRepositories.first
         categoryRepositories[.recommended] = SampleData.repositories
         categoryCanLoadMore = Dictionary(uniqueKeysWithValues: AppCategory.allCases.map { ($0, true) })
         token = keychain.read(account: "github-token") ?? storage.load(String.self, key: "token") ?? ""
+        applyProxySettings()
     }
 
     var selectedSource: DownloadSource {
@@ -812,6 +912,7 @@ final class AppStoreModel: ObservableObject {
         case .catalog: return AppSection.catalog.rawValue
         case .search: return text("search")
         case .collections: return text("favorites")
+        case .code: return text("code")
         case .downloads: return text("downloads")
         case .updates: return text("updates")
         case .settings: return text("settings")
@@ -857,6 +958,8 @@ final class AppStoreModel: ObservableObject {
             selected = searchRepositories.first ?? selected
         case .collections:
             selected = favorites.first ?? selected
+        case .code:
+            scanLocalRepositories()
         case .account:
             if githubUser != nil && userRepositories.isEmpty && !isAccountLoading {
                 Task { await refreshAccountData() }
@@ -1000,6 +1103,9 @@ final class AppStoreModel: ObservableObject {
         storage.save(sources, key: "sources")
         storage.save(selectedSourceID, key: "selectedSourceID")
         storage.save(appLanguage, key: "appLanguage")
+        storage.save(workspacePath, key: "workspacePath")
+        storage.save(proxySettings, key: "proxySettings")
+        applyProxySettings()
         do {
             try keychain.save(token.trimmingCharacters(in: .whitespacesAndNewlines), account: "github-token")
         } catch {
@@ -1007,6 +1113,10 @@ final class AppStoreModel: ObservableObject {
             return
         }
         status = "设置已保存"
+    }
+
+    func applyProxySettings() {
+        client.proxyURL = proxySettings.normalizedURL
     }
 
     func preloadCategories() async {
@@ -1069,6 +1179,254 @@ final class AppStoreModel: ObservableObject {
         } catch {
             status = "个人中心加载失败：\(error.localizedDescription)"
         }
+    }
+
+    var filteredUserRepositories: [Repository] {
+        let trimmed = accountRepositoryQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !trimmed.isEmpty else { return userRepositories }
+        return userRepositories.filter {
+            $0.fullName.lowercased().contains(trimmed) ||
+            $0.name.lowercased().contains(trimmed) ||
+            $0.description.lowercased().contains(trimmed)
+        }
+    }
+
+    func chooseWorkspacePath() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "选择"
+        if panel.runModal() == .OK, let url = panel.url {
+            workspacePath = url.path
+            storage.save(workspacePath, key: "workspacePath")
+            scanLocalRepositories()
+            status = "本地仓库路径已更新"
+        }
+    }
+
+    func forkSelectedRepository() async {
+        guard let repository = selected else {
+            status = "请先选择要 Fork 的项目"
+            return
+        }
+        await forkRepository(repository)
+    }
+
+    func forkRepository(_ repository: Repository) async {
+        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            status = "请先登录 GitHub Token，且 Token 需要 repo 权限"
+            return
+        }
+        isAccountLoading = true
+        status = "正在 Fork \(repository.fullName)..."
+        defer { isAccountLoading = false }
+        do {
+            let forked = try await client.forkRepository(owner: repository.owner, repo: repository.name, token: trimmed)
+            if !userRepositories.contains(where: { $0.fullName == forked.fullName }) {
+                userRepositories.insert(forked, at: 0)
+            }
+            status = "Fork 已创建：\(forked.fullName)"
+        } catch {
+            status = "Fork 失败：\(error.localizedDescription)"
+        }
+    }
+
+    func cloneRepository(_ repository: Repository) async {
+        await runGitRepositoryCommand(repository: repository, commandName: "下载") { destination in
+            ["clone", "https://github.com/\(repository.fullName).git", destination.path]
+        }
+    }
+
+    func syncSelectedLocalRepository() async {
+        guard let local = selectedLocalRepository else {
+            status = "请先选择本地仓库"
+            return
+        }
+        do {
+            _ = try await runGit(["add", "."], in: URL(fileURLWithPath: local.path))
+            _ = try await runGit(["commit", "-m", commitMessage.isEmpty ? "Update from OpenHub" : commitMessage], in: URL(fileURLWithPath: local.path), allowFailureContaining: "nothing to commit")
+            let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                let encodedToken = trimmed.addingPercentEncoding(withAllowedCharacters: .urlPasswordAllowed) ?? trimmed
+                let pushURL = "https://x-access-token:\(encodedToken)@github.com/\(local.fullName).git"
+                _ = try await runGit(["push", pushURL, "HEAD"], in: URL(fileURLWithPath: local.path))
+            } else {
+                _ = try await runGit(["push"], in: URL(fileURLWithPath: local.path))
+            }
+            await refreshGitStatus()
+            status = "已同步本地代码到 GitHub：\(local.fullName)"
+        } catch {
+            status = "同步失败：\(error.localizedDescription)"
+        }
+    }
+
+    func deleteSelectedLocalRepository() {
+        guard let local = selectedLocalRepository else {
+            status = "请先选择本地仓库"
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = "删除本地仓库？"
+        alert.informativeText = "该操作只会删除本地路径：\(local.path)，不会删除 GitHub 远程仓库。"
+        alert.addButton(withTitle: "删除本地仓库")
+        alert.addButton(withTitle: "取消")
+        alert.alertStyle = .warning
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        do {
+            try FileManager.default.removeItem(atPath: local.path)
+            localRepositories.removeAll { $0.id == local.id }
+            storage.save(localRepositories, key: "localRepositories")
+            selectedLocalRepository = localRepositories.first
+            codeFiles = []
+            selectedCodeFile = nil
+            codeText = ""
+            if let selectedLocalRepository { loadCodeFiles(for: selectedLocalRepository) }
+            status = "本地仓库已删除。该功能只能删除本地仓库，不会删除 GitHub 远程仓库。"
+        } catch {
+            status = "删除本地仓库失败：\(error.localizedDescription)"
+        }
+    }
+
+    func scanLocalRepositories() {
+        let root = URL(fileURLWithPath: workspacePath, isDirectory: true)
+        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let children = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])) ?? []
+        var scanned = localRepositories
+        for child in children {
+            guard (try? child.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true,
+                  FileManager.default.fileExists(atPath: child.appendingPathComponent(".git").path) else { continue }
+            if !scanned.contains(where: { $0.path == child.path }) {
+                scanned.append(LocalRepository(id: UUID(), fullName: child.lastPathComponent, path: child.path, remoteURL: "", updatedAt: Date()))
+            }
+        }
+        localRepositories = scanned.sorted { $0.updatedAt > $1.updatedAt }
+        storage.save(localRepositories, key: "localRepositories")
+        selectedLocalRepository = selectedLocalRepository ?? localRepositories.first
+        if let selectedLocalRepository { loadCodeFiles(for: selectedLocalRepository) }
+    }
+
+    func selectLocalRepository(_ repository: LocalRepository) {
+        selectedLocalRepository = repository
+        loadCodeFiles(for: repository)
+    }
+
+    func loadCodeFiles(for repository: LocalRepository) {
+        let root = URL(fileURLWithPath: repository.path, isDirectory: true)
+        let skipDirectories: Set<String> = [".git", ".build", ".swiftpm", "node_modules", "target", "dist", "DerivedData"]
+        let allowedExtensions: Set<String> = ["swift", "md", "json", "js", "ts", "html", "css", "rs", "toml", "yml", "yaml", "txt", "sh", "ps1"]
+        let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey], options: [.skipsHiddenFiles])
+        var files: [CodeFile] = []
+        while let url = enumerator?.nextObject() as? URL, files.count < 240 {
+            if (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+                if skipDirectories.contains(url.lastPathComponent) { enumerator?.skipDescendants() }
+                continue
+            }
+            let ext = url.pathExtension.lowercased()
+            guard allowedExtensions.contains(ext) || url.lastPathComponent == "Package.swift" || url.lastPathComponent == "README" else { continue }
+            let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            guard size < 600_000 else { continue }
+            let relative = String(url.path.dropFirst(root.path.count + 1))
+            files.append(CodeFile(relativePath: relative, absolutePath: url.path))
+        }
+        codeFiles = files.sorted { $0.relativePath < $1.relativePath }
+        if let first = codeFiles.first { selectCodeFile(first) }
+        Task { await refreshGitStatus() }
+    }
+
+    func selectCodeFile(_ file: CodeFile) {
+        selectedCodeFile = file
+        do {
+            codeText = try String(contentsOfFile: file.absolutePath, encoding: .utf8)
+            status = "已打开 \(file.relativePath)"
+        } catch {
+            codeText = ""
+            status = "文件读取失败：\(error.localizedDescription)"
+        }
+    }
+
+    func saveSelectedCodeFile() {
+        guard let file = selectedCodeFile else { return }
+        do {
+            try codeText.write(toFile: file.absolutePath, atomically: true, encoding: .utf8)
+            Task { await refreshGitStatus() }
+            status = "已保存 \(file.relativePath)"
+        } catch {
+            status = "保存失败：\(error.localizedDescription)"
+        }
+    }
+
+    var filteredCodeFiles: [CodeFile] {
+        let trimmed = codeSearch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !trimmed.isEmpty else { return codeFiles }
+        return codeFiles.filter { $0.relativePath.lowercased().contains(trimmed) }
+    }
+
+    func refreshGitStatus() async {
+        guard let local = selectedLocalRepository else { return }
+        let directory = URL(fileURLWithPath: local.path)
+        do {
+            currentBranch = (try await runGit(["branch", "--show-current"], in: directory)).trimmingCharacters(in: .whitespacesAndNewlines)
+            gitStatusText = try await runGit(["status", "--short"], in: directory)
+            gitDiffText = try await runGit(["diff", "--stat"], in: directory)
+        } catch {
+            gitStatusText = "Git 状态读取失败：\(error.localizedDescription)"
+        }
+    }
+
+    private func runGitRepositoryCommand(repository: Repository, commandName: String, arguments: (URL) -> [String]) async {
+        let root = URL(fileURLWithPath: workspacePath, isDirectory: true)
+        let destination = root.appendingPathComponent(repository.name, isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            if FileManager.default.fileExists(atPath: destination.path) {
+                status = "本地已存在：\(destination.path)"
+            } else {
+                status = "正在\(commandName)：\(repository.fullName)"
+                _ = try await runGit(arguments(destination), in: root)
+            }
+            let local = LocalRepository(id: UUID(), fullName: repository.fullName, path: destination.path, remoteURL: repository.htmlURL, updatedAt: Date())
+            localRepositories.removeAll { $0.path == local.path }
+            localRepositories.insert(local, at: 0)
+            storage.save(localRepositories, key: "localRepositories")
+            selectLocalRepository(local)
+            section = .code
+            status = "\(commandName)完成：\(repository.fullName)"
+        } catch {
+            status = "\(commandName)失败：\(error.localizedDescription)"
+        }
+    }
+
+    private func runGit(_ arguments: [String], in directory: URL, allowFailureContaining allowedText: String? = nil) async throws -> String {
+        try await withCheckedThrowingContinuation { continuation in
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            process.arguments = gitArguments(arguments)
+            process.currentDirectoryURL = directory
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = pipe
+            process.terminationHandler = { process in
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                let output = String(data: data, encoding: .utf8) ?? ""
+                if process.terminationStatus == 0 || (allowedText.map { output.contains($0) } ?? false) {
+                    continuation.resume(returning: output)
+                } else {
+                    continuation.resume(throwing: NSError(domain: "Git", code: Int(process.terminationStatus), userInfo: [NSLocalizedDescriptionKey: output.isEmpty ? "git \(arguments.joined(separator: " ")) failed" : output]))
+                }
+            }
+            do {
+                try process.run()
+            } catch {
+                continuation.resume(throwing: error)
+            }
+        }
+    }
+
+    private func gitArguments(_ arguments: [String]) -> [String] {
+        guard let proxyURL = proxySettings.normalizedURL?.absoluteString else { return arguments }
+        return ["-c", "http.proxy=\(proxyURL)", "-c", "https.proxy=\(proxyURL)"] + arguments
     }
 
     func logout() {
@@ -1244,6 +1602,8 @@ struct RootView: View {
             MainBrowserView()
         case .collections:
             RepositoryListView(repositories: model.favorites, title: model.text("favorites"), empty: EmptyStateConfig(title: model.text("emptyFavorites"), message: "把常用开源 app 加入收藏，换电脑或更新时更好找。", icon: "star", primaryTitle: model.text("goRecommended"), primaryAction: { model.navigate(to: .catalog) }))
+        case .code:
+            CodeWorkspaceView()
         case .downloads:
             DownloadsView()
         case .updates:
@@ -1299,7 +1659,7 @@ struct Sidebar: View {
                     Divider().padding(.horizontal, 12)
 
                     VStack(spacing: 4) {
-                        ForEach([AppSection.collections, .downloads, .updates, .settings, .account]) { section in
+                        ForEach([AppSection.collections, .code, .downloads, .updates, .settings, .account]) { section in
                             SidebarButton(title: model.title(for: section), icon: section.icon, selected: model.section == section) {
                                 model.navigate(to: section)
                             }
@@ -1591,6 +1951,20 @@ struct DetailHeader: View {
                     Label("GitHub", systemImage: "safari")
                 }
                 .buttonStyle(.bordered)
+                if model.githubUser?.login.lowercased() != repository.owner.lowercased() {
+                    Button {
+                        Task { await model.forkRepository(repository) }
+                    } label: {
+                        Label("Fork", systemImage: "tuningfork")
+                    }
+                    .buttonStyle(.bordered)
+                }
+                Button {
+                    Task { await model.cloneRepository(repository) }
+                } label: {
+                    Label("克隆", systemImage: "arrow.down.doc")
+                }
+                .buttonStyle(.bordered)
                 Text("★ \(shortNumber(repository.stars))")
                     .font(.headline)
             }
@@ -1815,6 +2189,26 @@ struct SettingsView: View {
                 }
             }
 
+            Section("代理设置") {
+                Toggle("启用代理加速 GitHub API 和 git clone/push", isOn: $model.proxySettings.enabled)
+                TextField("代理服务器，例如 http://127.0.0.1:7890 或 socks5://127.0.0.1:7890", text: $model.proxySettings.server)
+                Text("代理会应用到 GitHub API 请求，以及 OpenHub 内执行的 git clone / git push。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("本地仓库") {
+                HStack {
+                    TextField("本地仓库路径", text: $model.workspacePath)
+                    Button("选择路径") {
+                        model.chooseWorkspacePath()
+                    }
+                }
+                Text("用于克隆自己的仓库、浏览本地代码、保存修改并执行 git push。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Button {
                 model.saveSettings()
             } label: {
@@ -1880,6 +2274,11 @@ struct AccountView: View {
                             .font(.headline)
                         Spacer()
                         Button {
+                            model.chooseWorkspacePath()
+                        } label: {
+                            Label("本地路径", systemImage: "folder")
+                        }
+                        Button {
                             Task { await model.refreshAccountData() }
                         } label: {
                             Label("刷新", systemImage: "arrow.clockwise")
@@ -1887,11 +2286,14 @@ struct AccountView: View {
                         .disabled(model.isAccountLoading)
                     }
 
-                    RepositoryCompactList(repositories: model.userRepositories, emptyTitle: "暂无可展示仓库")
+                    TextField("检索自己的仓库", text: $model.accountRepositoryQuery)
+                        .textFieldStyle(.roundedBorder)
+
+                    RepositoryCompactList(repositories: model.filteredUserRepositories, emptyTitle: "暂无可展示仓库", showActions: true)
 
                     Text("星标仓库")
                         .font(.headline)
-                    RepositoryCompactList(repositories: model.starredRepositories, emptyTitle: "暂无星标仓库")
+                    RepositoryCompactList(repositories: model.starredRepositories, emptyTitle: "暂无星标仓库", showActions: false)
                 } else {
                     Panel(title: "只支持 GitHub 账号登录", icon: "person.badge.key") {
                         VStack(alignment: .leading, spacing: 12) {
@@ -1923,8 +2325,10 @@ struct AccountView: View {
 }
 
 struct RepositoryCompactList: View {
+    @EnvironmentObject private var model: AppStoreModel
     let repositories: [Repository]
     let emptyTitle: String
+    var showActions = false
 
     var body: some View {
         if repositories.isEmpty {
@@ -1955,11 +2359,177 @@ struct RepositoryCompactList: View {
                         Label(shortNumber(repository.stars), systemImage: "star.fill")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                        if showActions {
+                            Button("克隆") {
+                                Task { await model.cloneRepository(repository) }
+                            }
+                        }
                     }
                     .padding(10)
                     .background(Color(nsColor: .controlBackgroundColor))
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
+            }
+        }
+    }
+}
+
+struct CodeWorkspaceView: View {
+    @EnvironmentObject private var model: AppStoreModel
+
+    var body: some View {
+        HStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("代码工作区")
+                            .font(.title2.bold())
+                        Text(model.workspacePath)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer()
+                    Button {
+                        model.chooseWorkspacePath()
+                    } label: {
+                        Label("路径", systemImage: "folder")
+                    }
+                    Button {
+                        model.scanLocalRepositories()
+                    } label: {
+                        Label("刷新", systemImage: "arrow.clockwise")
+                    }
+                }
+                Picker("本地仓库", selection: Binding(
+                    get: { model.selectedLocalRepository?.id },
+                    set: { id in
+                        if let repository = model.localRepositories.first(where: { $0.id == id }) {
+                            model.selectLocalRepository(repository)
+                        }
+                    }
+                )) {
+                    Text("选择本地仓库").tag(Optional<UUID>.none)
+                    ForEach(model.localRepositories) { repository in
+                        Text(repository.fullName).tag(Optional(repository.id))
+                    }
+                }
+                .labelsHidden()
+
+                TextField("搜索文件", text: $model.codeSearch)
+                    .textFieldStyle(.roundedBorder)
+
+                List(model.filteredCodeFiles, selection: Binding(
+                    get: { model.selectedCodeFile?.id },
+                    set: { id in
+                        if let file = model.codeFiles.first(where: { $0.id == id }) {
+                            model.selectCodeFile(file)
+                        }
+                    }
+                )) { file in
+                    Text(file.relativePath)
+                        .font(.caption)
+                        .lineLimit(1)
+                        .tag(file.id)
+                }
+
+                HStack {
+                    Button(role: .destructive) {
+                        model.deleteSelectedLocalRepository()
+                    } label: {
+                        Label("删除本地", systemImage: "trash")
+                    }
+                    .disabled(model.selectedLocalRepository == nil)
+
+                    Button {
+                        if let repository = model.selectedLocalRepository {
+                            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: repository.path)])
+                        }
+                    } label: {
+                        Label("Finder", systemImage: "folder")
+                    }
+                    .disabled(model.selectedLocalRepository == nil)
+                }
+            }
+            .padding(18)
+            .frame(width: 340)
+            .background(Color(nsColor: .controlBackgroundColor))
+
+            Divider()
+
+            VStack(spacing: 0) {
+                HStack {
+                    Text(model.selectedCodeFile?.relativePath ?? "选择文件")
+                        .font(.headline)
+                        .lineLimit(1)
+                    if !model.currentBranch.isEmpty {
+                        Text(model.currentBranch)
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.accentColor.opacity(0.12))
+                            .clipShape(Capsule())
+                    }
+                    Spacer()
+                    Button {
+                        Task { await model.refreshGitStatus() }
+                    } label: {
+                        Label("Git 状态", systemImage: "arrow.clockwise")
+                    }
+                    Button {
+                        model.saveSelectedCodeFile()
+                    } label: {
+                        Label("保存", systemImage: "square.and.arrow.down")
+                    }
+                    .disabled(model.selectedCodeFile == nil)
+                    Button {
+                        Task { await model.syncSelectedLocalRepository() }
+                    } label: {
+                        Label("同步到 GitHub", systemImage: "arrow.up.circle")
+                    }
+                    .disabled(model.selectedLocalRepository == nil)
+                }
+                .padding(14)
+                Divider()
+                TextEditor(text: $model.codeText)
+                    .font(.system(.body, design: .monospaced))
+                    .padding(12)
+                Divider()
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Git 变更")
+                            .font(.caption.weight(.semibold))
+                        ScrollView {
+                            Text(model.gitStatusText.isEmpty ? "暂无未提交变更" : model.gitStatusText)
+                                .font(.system(.caption, design: .monospaced))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .frame(height: 74)
+                    }
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Diff 概览")
+                            .font(.caption.weight(.semibold))
+                        ScrollView {
+                            Text(model.gitDiffText.isEmpty ? "暂无 diff" : model.gitDiffText)
+                                .font(.system(.caption, design: .monospaced))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .frame(height: 74)
+                    }
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("提交")
+                            .font(.caption.weight(.semibold))
+                        TextField("Commit message", text: $model.commitMessage)
+                            .textFieldStyle(.roundedBorder)
+                        Button {
+                            Task { await model.syncSelectedLocalRepository() }
+                        } label: {
+                            Label("保存并同步到 GitHub", systemImage: "arrow.up.circle")
+                        }
+                        .disabled(model.selectedLocalRepository == nil)
+                    }
+                }
+                .padding(12)
             }
         }
     }

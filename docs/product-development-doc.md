@@ -195,6 +195,9 @@
   - 用户登录 GitHub 后，在 app 内收藏仓库时，同时调用 GitHub Star API。
   - 取消收藏时，同时取消 GitHub Star。
   - GitHub Star 同步失败时保留本地收藏状态，并在状态栏提示用户稍后重试。
+  - 如果返回 HTTP 403，提示用户检查 GitHub Token 权限：
+    - fine-grained token 需要 `Starring` 写权限。
+    - classic token 可使用 `public_repo` 或 `repo` 权限。
   - 未登录时只执行本地收藏，并提示登录后可同步 GitHub Star。
 - 自定义合集：例如“新 Mac 必装”、“开发环境”、“菜单栏工具”。
 - 可选 iCloud 同步，后续版本实现。
@@ -237,11 +240,15 @@
 - MVP 阶段使用 GitHub Personal Access Token 登录：
   - 用户输入 token 后调用 GitHub `/user` 验证身份。
   - 登录成功后展示头像、用户名、昵称、个人主页链接。
-  - token 存储在本地，正式版迁移到 macOS Keychain。
+  - token 存储在本地 macOS Keychain。
+  - 如需 Fork、克隆私有仓库、push 同步，Token 需要具备对应 `repo` 权限。
 - 个人中心展示：
   - 我的仓库。
+  - 我的仓库检索。
   - 我的星标仓库。
   - GitHub 主页入口。
+  - 克隆仓库到本地工作区。
+  - Fork 仓库到自己的 GitHub 账号。
   - 退出登录。
 - 登录失败时展示明确错误，不能影响发现和搜索基础浏览。
 
@@ -274,6 +281,47 @@
   - 本地 Windows 环境可执行 `windows/openhub-tauri/scripts/build-windows.ps1`。
   - GitHub Actions 可手动触发 `Build Windows Tauri` 工作流。
   - 产物上传为 `OpenHub-Windows` artifact，包含 `.exe` 和 `.msi`。
+
+### 4.13 Fork、本地仓库和代码编辑
+
+- Fork 功能：
+  - 在非本人项目的详情页提供 Fork 操作。
+  - 个人中心的“我的仓库”均为自己已有仓库，不提供 Fork 自己仓库的入口。
+  - 使用 GitHub REST API `POST /repos/{owner}/{repo}/forks` 创建 Fork。
+  - Fork 成功后将新仓库插入个人仓库列表。
+  - Fork 失败时保留当前页面状态，并在状态栏提示错误。
+- 本地仓库路径：
+  - 设置中心提供本地仓库根路径。
+  - 默认路径为用户文档目录下的 `OpenHubRepos`。
+  - 用户可通过目录选择器修改路径。
+  - 修改后扫描路径下已有 Git 仓库。
+- 下载/克隆自己的仓库：
+  - 个人中心支持检索自己的仓库。
+  - 仓库列表提供“克隆”按钮。
+  - 默认使用 `git clone https://github.com/{owner}/{repo}.git` 下载到本地工作区。
+  - 如果目录已存在，不重复克隆，直接进入代码工作区。
+- 内置代码编辑：
+  - 新增“代码”频道。
+  - 左侧展示本地仓库、文件搜索和可编辑文本文件列表。
+  - 支持常见文本文件：Swift、Markdown、JSON、JavaScript、TypeScript、HTML、CSS、Rust、TOML、YAML、Shell、PowerShell 等。
+  - 大文件、二进制文件、`.git`、`node_modules`、`target`、`dist`、构建缓存默认隐藏。
+  - 编辑后可保存到本地文件。
+  - 展示当前 Git 分支、变更状态和 diff 概览。
+  - 提供删除本地仓库入口，删除成功提示必须明确“只删除本地仓库，不删除 GitHub 远程仓库”。
+- 同步到 GitHub：
+  - 代码工作区提供 Commit message 输入框。
+  - 点击“同步到 GitHub”后执行 `git add .`、`git commit -m`、`git push`。
+  - 如果已登录 Token，则 push 可使用 Token HTTPS URL；否则依赖本机 Git 凭据。
+  - 同步失败时展示 Git 输出，便于用户处理权限、冲突或凭据问题。
+- 代理设置：
+  - 设置中心新增代理设置。
+  - 支持 HTTP/HTTPS/SOCKS 代理地址，例如 `http://127.0.0.1:7890` 或 `socks5://127.0.0.1:7890`。
+  - 代理应用到 GitHub API 请求和 OpenHub 内执行的 git clone / git push。
+  - 用户遇到 `Failed to connect to github.com port 443` 时，优先提示配置代理服务器。
+- 约束：
+  - 首版是轻量代码编辑器，不替代 Xcode、VS Code 或 JetBrains IDE。
+  - 首版不自动解决 merge conflict。
+  - 首版不执行未确认的 destructive git 操作。
 
 ## 5. 数据来源与 GitHub API
 

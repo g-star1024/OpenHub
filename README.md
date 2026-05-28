@@ -4,7 +4,7 @@
 
 OpenHub 是一个免费开源的桌面客户端，用于发现、收藏、查看和下载 GitHub 上的开源应用、开发者工具和命令行工具。当前包含 macOS 原生版和独立 Windows/Tauri 版源码。
 
-<img src="Assets/app-icon-source.png" alt="OpenHub icon" width="128">
+![OpenHub icon](Assets/app-icon-source.png)
 
 ## 特性
 
@@ -19,6 +19,10 @@ OpenHub 是一个免费开源的桌面客户端，用于发现、收藏、查看
 - 本地收藏、下载记录与稳定空状态
 - 登录 GitHub 后收藏同步 GitHub Star
 - GitHub 登录、个人中心、我的仓库与星标仓库
+- Fork 仓库、检索个人仓库、克隆到本地工作区
+- 内置轻量代码编辑器，支持保存、commit 并同步到 GitHub
+- 支持修改本地仓库路径
+- 代理设置，可加速 GitHub API 与 git clone / push
 - GitHub Token 存储在 macOS Keychain
 - 界面语言设置，支持简体中文和 English
 - 标准 macOS `.icns` 应用图标
@@ -82,11 +86,11 @@ OpenHub/
   README.md
 ```
 
-## 英文
+## English
 
-OpenHub is a free and open-source desktop client for discovering, collecting, viewing, 和 downloading open-source apps, developer tools, 和 CLI utilities from GitHub. It currently includes the native macOS app and a separate Windows/Tauri source tree.
+OpenHub is a free and open-source desktop client for discovering, collecting, viewing, and downloading open-source apps, developer tools, and CLI utilities from GitHub. It currently includes the native macOS app and a separate Windows/Tauri source tree.
 
-<img src="Assets/app-icon-source.png" alt="OpenHub icon" width="128">
+![OpenHub icon](Assets/app-icon-source.png)
 
 ## Features
 
@@ -95,12 +99,16 @@ OpenHub is a free and open-source desktop client for discovering, collecting, vi
 - Background preloading for category first pages
 - Chinese-friendly software categories
 - GitHub owner avatars in project lists and detail views
-- Repository docs, Release information, 和 downloadable assets
+- Repository docs, Release information, and downloadable assets
 - Sanitized repository descriptions and Release notes
 - Download source switching and custom proxy templates
-- Local favorites, download history, 和 stable empty states
+- Local favorites, download history, and stable empty states
 - GitHub Star sync after signing in
 - GitHub sign-in, account center, owned repositories, and starred repositories
+- Fork repositories, search owned repositories, and clone into a local workspace
+- Lightweight built-in code editor with save, commit, and GitHub sync
+- Configurable local repository workspace path
+- Proxy settings for GitHub API and git clone / push
 - GitHub Token stored in macOS Keychain
 - Interface language settings for Simplified Chinese and English
 - Standard macOS `.icns` app icon
