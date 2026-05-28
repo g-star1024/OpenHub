@@ -138,6 +138,33 @@ enum AppCategory: String, Codable, CaseIterable, Identifiable {
     case hardware = "硬件外设"
 
     var id: String { rawValue }
+    var nameKey: String {
+        switch self {
+        case .recommended: "recommended"
+        case .hot: "hot"
+        case .productivity: "productivity"
+        case .developer: "developer"
+        case .ai: "ai"
+        case .system: "system"
+        case .menuBar: "menuBar"
+        case .terminal: "terminal"
+        case .network: "network"
+        case .downloader: "downloader"
+        case .capture: "capture"
+        case .design: "design"
+        case .media: "media"
+        case .writing: "writing"
+        case .translation: "translation"
+        case .files: "files"
+        case .security: "security"
+        case .education: "education"
+        case .database: "database"
+        case .browser: "browser"
+        case .games: "games"
+        case .hardware: "hardware"
+        }
+    }
+
     var query: String {
         switch self {
         case .recommended: "macos app stars:>500"
@@ -214,6 +241,174 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .account: "person.crop.circle"
         }
     }
+}
+
+enum AppLanguage: String, Codable, CaseIterable, Identifiable {
+    case system = "system"
+    case zhHans = "zh-Hans"
+    case en = "en"
+
+    var id: String { rawValue }
+    var displayName: String {
+        switch self {
+        case .system: "跟随系统 / System"
+        case .zhHans: "简体中文"
+        case .en: "English"
+        }
+    }
+}
+
+enum L10n {
+    static func text(_ key: String, language: AppLanguage) -> String {
+        let effective: AppLanguage
+        if language == .system {
+            effective = Locale.preferredLanguages.first?.lowercased().hasPrefix("zh") == true ? .zhHans : .en
+        } else {
+            effective = language
+        }
+
+        let zh = zhHans[key] ?? key
+        let en = english[key] ?? zh
+        return effective == .en ? en : zh
+    }
+
+    static func categoryName(_ category: AppCategory, language: AppLanguage) -> String {
+        text("category.\(category.nameKey)", language: language)
+    }
+
+    private static let zhHans: [String: String] = [
+        "category.recommended": "推荐",
+        "category.hot": "热门",
+        "category.productivity": "效率办公",
+        "category.developer": "开发编程",
+        "category.ai": "AI 工具",
+        "category.system": "系统增强",
+        "category.menuBar": "菜单栏工具",
+        "category.terminal": "终端命令行",
+        "category.network": "网络代理",
+        "category.downloader": "下载工具",
+        "category.capture": "截图录屏",
+        "category.design": "图片设计",
+        "category.media": "音视频",
+        "category.writing": "笔记写作",
+        "category.translation": "阅读翻译",
+        "category.files": "文件管理",
+        "category.security": "安全隐私",
+        "category.education": "学习教育",
+        "category.database": "数据库",
+        "category.browser": "浏览器扩展",
+        "category.games": "游戏娱乐",
+        "category.hardware": "硬件外设",
+        "search": "搜索",
+        "favorites": "收藏",
+        "downloads": "下载",
+        "updates": "更新",
+        "settings": "设置",
+        "account": "登录",
+        "accountCenter": "个人中心",
+        "appSubtitle": "GitHub 开源应用浏览器",
+        "categories": "分类",
+        "searchResults": "搜索结果",
+        "recommendedSubtitle": "GitHub 热门前 100，滚动浏览",
+        "searchSubtitle": "按仓库名精确度、stars 和更新时间排序",
+        "searchPlaceholder": "输入仓库名可精确排序，例如 iina、rectangle、utm",
+        "submitProject": "提交项目",
+        "continueLoading": "继续加载热门项目...",
+        "repositoryDocs": "仓库文档",
+        "downloadAssets": "下载资源",
+        "trustInfo": "信任信息",
+        "releaseInfo": "版本信息",
+        "language": "语言",
+        "interfaceLanguage": "界面语言",
+        "saveSettings": "保存设置",
+        "githubToken": "Personal Access Token，可选",
+        "tokenKeychain": "Token 会保存在本机 macOS Keychain，不写入普通配置文件。",
+        "downloadSource": "下载源",
+        "defaultDownloadSource": "默认下载源",
+        "localizationNote": "当前支持简体中文和 English。仓库原始内容不会被强制翻译。",
+        "goRecommended": "去推荐",
+        "goSearch": "去搜索",
+        "viewRecommended": "查看推荐",
+        "emptyFavorites": "还没有收藏项目",
+        "emptyDownloads": "还没有下载记录",
+        "emptyUpdates": "暂无更新提醒",
+        "selectProject": "选择一个项目",
+        "loginGitHub": "登录 GitHub",
+        "githubAccount": "GitHub 账号",
+        "logout": "退出登录",
+        "openGitHub": "打开 GitHub",
+        "refresh": "刷新",
+        "myRepos": "我的仓库",
+        "starredRepos": "星标仓库",
+        "createToken": "创建 Token"
+    ]
+
+    private static let english: [String: String] = [
+        "category.recommended": "Recommended",
+        "category.hot": "Popular",
+        "category.productivity": "Productivity",
+        "category.developer": "Developer Tools",
+        "category.ai": "AI Tools",
+        "category.system": "System Utilities",
+        "category.menuBar": "Menu Bar",
+        "category.terminal": "Terminal & CLI",
+        "category.network": "Network & Proxy",
+        "category.downloader": "Downloaders",
+        "category.capture": "Screen Capture",
+        "category.design": "Design",
+        "category.media": "Media",
+        "category.writing": "Notes & Writing",
+        "category.translation": "Reading & Translation",
+        "category.files": "File Management",
+        "category.security": "Security & Privacy",
+        "category.education": "Learning",
+        "category.database": "Databases",
+        "category.browser": "Browser Extensions",
+        "category.games": "Games",
+        "category.hardware": "Hardware",
+        "search": "Search",
+        "favorites": "Favorites",
+        "downloads": "Downloads",
+        "updates": "Updates",
+        "settings": "Settings",
+        "account": "Sign In",
+        "accountCenter": "Account",
+        "appSubtitle": "GitHub open-source app browser",
+        "categories": "Categories",
+        "searchResults": "Search Results",
+        "recommendedSubtitle": "GitHub Top 100, scroll to browse",
+        "searchSubtitle": "Ranked by repository-name match, stars, and update time",
+        "searchPlaceholder": "Type a repository name, e.g. iina, rectangle, utm",
+        "submitProject": "Submit",
+        "continueLoading": "Loading more popular projects...",
+        "repositoryDocs": "Repository Docs",
+        "downloadAssets": "Downloads",
+        "trustInfo": "Trust",
+        "releaseInfo": "Release",
+        "language": "Language",
+        "interfaceLanguage": "Interface Language",
+        "saveSettings": "Save Settings",
+        "githubToken": "Personal Access Token, optional",
+        "tokenKeychain": "Token is stored locally in macOS Keychain.",
+        "downloadSource": "Download Source",
+        "defaultDownloadSource": "Default Source",
+        "localizationNote": "Supports Simplified Chinese and English. Repository content is not force-translated.",
+        "goRecommended": "Recommended",
+        "goSearch": "Search",
+        "viewRecommended": "Recommended",
+        "emptyFavorites": "No favorites yet",
+        "emptyDownloads": "No downloads yet",
+        "emptyUpdates": "No updates yet",
+        "selectProject": "Select a project",
+        "loginGitHub": "Sign in with GitHub",
+        "githubAccount": "GitHub Account",
+        "logout": "Sign Out",
+        "openGitHub": "Open GitHub",
+        "refresh": "Refresh",
+        "myRepos": "My Repositories",
+        "starredRepos": "Starred Repositories",
+        "createToken": "Create Token"
+    ]
 }
 
 enum ReadableTextSanitizer {
@@ -319,6 +514,16 @@ final class GitHubClient {
         return items.map(repository(from:))
     }
 
+    func starRepository(owner: String, repo: String, token: String) async throws {
+        let url = URL(string: "https://api.github.com/user/starred/\(owner)/\(repo)")!
+        _ = try await request(url, method: "PUT", token: token, emptySuccessCodes: [204])
+    }
+
+    func unstarRepository(owner: String, repo: String, token: String) async throws {
+        let url = URL(string: "https://api.github.com/user/starred/\(owner)/\(repo)")!
+        _ = try await request(url, method: "DELETE", token: token, emptySuccessCodes: [204])
+    }
+
     func latestRelease(owner: String, repo: String, token: String?) async throws -> Release {
         let url = URL(string: "https://api.github.com/repos/\(owner)/\(repo)/releases/latest")!
         let data = try await request(url, token: token)
@@ -357,14 +562,18 @@ final class GitHubClient {
         return response.items.map(repository(from:))
     }
 
-    private func request(_ url: URL, token: String?) async throws -> Data {
+    private func request(_ url: URL, method: String = "GET", token: String?, emptySuccessCodes: Set<Int> = []) async throws -> Data {
         var request = URLRequest(url: url)
+        request.httpMethod = method
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("OpenHub-MVP", forHTTPHeaderField: "User-Agent")
         if let token, !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         let (data, response) = try await URLSession.shared.data(for: request)
+        if let http = response as? HTTPURLResponse, emptySuccessCodes.contains(http.statusCode) {
+            return data
+        }
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             throw NSError(domain: "GitHub", code: http.statusCode, userInfo: [
                 NSLocalizedDescriptionKey: "GitHub API 请求失败：HTTP \(http.statusCode)"
@@ -545,13 +754,16 @@ final class AppStoreModel: ObservableObject {
         DownloadSource(id: "custom-proxy", name: "自定义加速源", type: "proxy", enabled: false, urlTemplate: "https://example.com/{originalUrl}", priority: 50)
     ]
     @Published var selectedSourceID = "github-original"
+    @Published var appLanguage: AppLanguage = .system
     @Published var token = ""
     @Published var status = "准备就绪"
     @Published var isLoading = false
     @Published var downloadProgress: Double = 0
     @Published var hasLoadedDiscover = false
-    @Published var discoverPage = 0
-    @Published var canLoadMoreDiscover = true
+    @Published var categoryRepositories: [AppCategory: [Repository]] = [:]
+    @Published var categoryPages: [AppCategory: Int] = [:]
+    @Published var categoryCanLoadMore: [AppCategory: Bool] = [:]
+    @Published var isPreloadingCategories = false
     @Published var githubUser: GitHubUser?
     @Published var userRepositories: [Repository] = []
     @Published var starredRepositories: [Repository] = []
@@ -566,6 +778,9 @@ final class AppStoreModel: ObservableObject {
         downloads = storage.load([DownloadRecord].self, key: "downloads") ?? []
         sources = storage.load([DownloadSource].self, key: "sources") ?? sources
         selectedSourceID = storage.load(String.self, key: "selectedSourceID") ?? selectedSourceID
+        appLanguage = storage.load(AppLanguage.self, key: "appLanguage") ?? .system
+        categoryRepositories[.recommended] = SampleData.repositories
+        categoryCanLoadMore = Dictionary(uniqueKeysWithValues: AppCategory.allCases.map { ($0, true) })
         token = keychain.read(account: "github-token") ?? storage.load(String.self, key: "token") ?? ""
     }
 
@@ -575,7 +790,7 @@ final class AppStoreModel: ObservableObject {
 
     var visibleRepositories: [Repository] {
         switch section {
-        case .catalog: discoverRepositories
+        case .catalog: categoryRepositories[category] ?? fallbackRepositories(for: category)
         case .search: searchRepositories
         case .collections: favorites
         default: []
@@ -584,10 +799,47 @@ final class AppStoreModel: ObservableObject {
 
     var isLoggedIn: Bool { githubUser != nil }
 
+    var canLoadMoreDiscover: Bool {
+        categoryCanLoadMore[category, default: true]
+    }
+
+    func text(_ key: String) -> String {
+        L10n.text(key, language: appLanguage)
+    }
+
+    func title(for section: AppSection) -> String {
+        switch section {
+        case .catalog: return AppSection.catalog.rawValue
+        case .search: return text("search")
+        case .collections: return text("favorites")
+        case .downloads: return text("downloads")
+        case .updates: return text("updates")
+        case .settings: return text("settings")
+        case .account: return isLoggedIn ? text("accountCenter") : text("account")
+        }
+    }
+
+    func title(for category: AppCategory) -> String {
+        L10n.categoryName(category, language: appLanguage)
+    }
+
+    func matchReason(for repository: Repository) -> String {
+        if repository.matchReason == "GitHub 热门" {
+            return appLanguage == .en ? "GitHub Popular" : "GitHub 热门"
+        }
+        if repository.matchReason == repository.category.rawValue {
+            return title(for: repository.category)
+        }
+        return repository.matchReason
+    }
+
     func bootstrap() {
         guard !hasLoadedDiscover else { return }
         hasLoadedDiscover = true
-        Task { await loadDiscover(force: false) }
+        Task {
+            await loadDiscover(force: false)
+            await preloadCategories()
+        }
     }
 
     func navigate(to section: AppSection) {
@@ -595,10 +847,10 @@ final class AppStoreModel: ObservableObject {
         status = "已切换到\(section.rawValue)"
         switch section {
         case .catalog:
-            if discoverRepositories.isEmpty || !hasLoadedDiscover {
+            if categoryRepositories[category]?.isEmpty != false || !hasLoadedDiscover {
                 Task { await loadDiscover(force: false) }
             } else {
-                selected = selected ?? discoverRepositories.first
+                selected = selected ?? categoryRepositories[category]?.first
             }
         case .search:
             status = query.isEmpty ? "输入仓库名可获得更精确排序" : "保留上次搜索：\(query)"
@@ -616,42 +868,48 @@ final class AppStoreModel: ObservableObject {
 
     func loadDiscover(force: Bool) async {
         if isLoading { return }
+        let currentCategory = category
         if force {
-            discoverPage = 0
-            canLoadMoreDiscover = true
-            discoverRepositories = []
+            categoryPages[currentCategory] = 0
+            categoryCanLoadMore[currentCategory] = true
         }
-        guard canLoadMoreDiscover else { return }
+        guard categoryCanLoadMore[currentCategory, default: true] else { return }
         isLoading = true
-        let nextPage = discoverPage + 1
+        let nextPage = categoryPages[currentCategory, default: 0] + 1
         status = nextPage == 1 ? "正在加载 GitHub 热门前 20..." : "正在继续加载热门项目..."
         defer { isLoading = false }
         do {
-            let result = try await client.discoverTop(category: category, page: nextPage, token: token)
+            let result = try await client.discoverTop(category: currentCategory, page: nextPage, token: token)
             if nextPage == 1 {
-                discoverRepositories = result.isEmpty ? SampleData.repositories : result
+                categoryRepositories[currentCategory] = result.isEmpty ? fallbackRepositories(for: currentCategory) : result
             } else {
-                let existing = Set(discoverRepositories.map(\.fullName))
-                discoverRepositories.append(contentsOf: result.filter { !existing.contains($0.fullName) })
+                let currentList = categoryRepositories[currentCategory] ?? []
+                let existing = Set(currentList.map(\.fullName))
+                categoryRepositories[currentCategory] = currentList + result.filter { !existing.contains($0.fullName) }
             }
-            discoverPage = nextPage
-            canLoadMoreDiscover = discoverRepositories.count < 100 && !result.isEmpty && nextPage < 5
-            selected = selected ?? discoverRepositories.first
-            status = "已加载 \(discoverRepositories.count)/100 个 GitHub 热门项目"
-            if nextPage == 1, let first = discoverRepositories.first { await loadRelease(for: first) }
+            let loadedCount = categoryRepositories[currentCategory]?.count ?? 0
+            categoryPages[currentCategory] = nextPage
+            categoryCanLoadMore[currentCategory] = loadedCount < 100 && !result.isEmpty && nextPage < 5
+            if category == currentCategory && section == .catalog {
+                selected = selected ?? categoryRepositories[currentCategory]?.first
+                if nextPage == 1, let first = categoryRepositories[currentCategory]?.first { await loadRelease(for: first) }
+            }
+            status = "已加载 \(loadedCount)/100 个 GitHub 热门项目"
         } catch {
             status = "热门项目加载失败，已显示离线示例：\(error.localizedDescription)"
-            if discoverRepositories.isEmpty {
-                discoverRepositories = SampleData.repositories
-                selected = discoverRepositories.first
+            if categoryRepositories[currentCategory]?.isEmpty != false {
+                categoryRepositories[currentCategory] = fallbackRepositories(for: currentCategory)
+                if category == currentCategory {
+                    selected = categoryRepositories[currentCategory]?.first
+                }
             }
-            canLoadMoreDiscover = false
+            categoryCanLoadMore[currentCategory] = false
         }
     }
 
     func loadMoreDiscoverIfNeeded(current repository: Repository) {
         guard section == .catalog, canLoadMoreDiscover, !isLoading else { return }
-        guard discoverRepositories.last?.fullName == repository.fullName else { return }
+        guard visibleRepositories.last?.fullName == repository.fullName else { return }
         Task { await loadDiscover(force: false) }
     }
 
@@ -680,7 +938,11 @@ final class AppStoreModel: ObservableObject {
     func choose(category: AppCategory) {
         self.category = category
         section = .catalog
-        Task { await loadDiscover(force: true) }
+        let cached = categoryRepositories[category] ?? fallbackRepositories(for: category)
+        selected = cached.first ?? selected
+        if categoryPages[category, default: 0] == 0 {
+            Task { await loadDiscover(force: false) }
+        }
     }
 
     func select(_ repository: Repository) {
@@ -699,13 +961,35 @@ final class AppStoreModel: ObservableObject {
         }
     }
 
-    func toggleFavorite(_ repository: Repository) {
+    func toggleFavorite(_ repository: Repository) async {
+        let wasFavorite = favorites.contains(where: { $0.fullName == repository.fullName })
         if let index = favorites.firstIndex(where: { $0.fullName == repository.fullName }) {
             favorites.remove(at: index)
         } else {
             favorites.append(repository)
         }
         storage.save(favorites, key: "favorites")
+
+        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            status = wasFavorite ? "已取消本地收藏" : "已加入本地收藏"
+            return
+        }
+        do {
+            if wasFavorite {
+                try await client.unstarRepository(owner: repository.owner, repo: repository.name, token: trimmed)
+                starredRepositories.removeAll { $0.fullName == repository.fullName }
+                status = "已取消收藏并同步 GitHub Star"
+            } else {
+                try await client.starRepository(owner: repository.owner, repo: repository.name, token: trimmed)
+                if !starredRepositories.contains(where: { $0.fullName == repository.fullName }) {
+                    starredRepositories.insert(repository, at: 0)
+                }
+                status = "已收藏并同步 GitHub Star"
+            }
+        } catch {
+            status = "本地收藏已保存，GitHub Star 同步失败：\(error.localizedDescription)"
+        }
     }
 
     func isFavorite(_ repository: Repository) -> Bool {
@@ -715,6 +999,7 @@ final class AppStoreModel: ObservableObject {
     func saveSettings() {
         storage.save(sources, key: "sources")
         storage.save(selectedSourceID, key: "selectedSourceID")
+        storage.save(appLanguage, key: "appLanguage")
         do {
             try keychain.save(token.trimmingCharacters(in: .whitespacesAndNewlines), account: "github-token")
         } catch {
@@ -722,6 +1007,32 @@ final class AppStoreModel: ObservableObject {
             return
         }
         status = "设置已保存"
+    }
+
+    func preloadCategories() async {
+        guard !isPreloadingCategories else { return }
+        isPreloadingCategories = true
+        defer { isPreloadingCategories = false }
+
+        for preloadCategory in AppCategory.allCases {
+            if categoryPages[preloadCategory, default: 0] > 0 { continue }
+            do {
+                let result = try await client.discoverTop(category: preloadCategory, page: 1, token: token)
+                let list = result.isEmpty ? fallbackRepositories(for: preloadCategory) : result
+                categoryRepositories[preloadCategory] = list
+                categoryPages[preloadCategory] = 1
+                categoryCanLoadMore[preloadCategory] = list.count < 100 && !result.isEmpty
+                if section == .catalog, category == preloadCategory, selected == nil {
+                    selected = list.first
+                }
+            } catch {
+                if categoryRepositories[preloadCategory]?.isEmpty != false {
+                    categoryRepositories[preloadCategory] = fallbackRepositories(for: preloadCategory)
+                }
+                categoryCanLoadMore[preloadCategory] = false
+            }
+        }
+        status = "分类内容预加载完成"
     }
 
     func loginWithGitHubToken() async {
@@ -803,6 +1114,15 @@ final class AppStoreModel: ObservableObject {
         let data = try Data(contentsOf: url)
         let digest = SHA256.hash(data: data)
         return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func fallbackRepositories(for category: AppCategory) -> [Repository] {
+        SampleData.repositories.map { repository in
+            var copy = repository
+            copy.category = category == .recommended ? repository.category : category
+            copy.matchReason = category == .recommended ? repository.matchReason : "离线示例"
+            return copy
+        }
     }
 }
 
@@ -923,7 +1243,7 @@ struct RootView: View {
         case .catalog, .search:
             MainBrowserView()
         case .collections:
-            RepositoryListView(repositories: model.favorites, title: "收藏", empty: EmptyStateConfig(title: "还没有收藏项目", message: "把常用开源 app 加入收藏，换电脑或更新时更好找。", icon: "star", primaryTitle: "去推荐", primaryAction: { model.navigate(to: .catalog) }))
+            RepositoryListView(repositories: model.favorites, title: model.text("favorites"), empty: EmptyStateConfig(title: model.text("emptyFavorites"), message: "把常用开源 app 加入收藏，换电脑或更新时更好找。", icon: "star", primaryTitle: model.text("goRecommended"), primaryAction: { model.navigate(to: .catalog) }))
         case .downloads:
             DownloadsView()
         case .updates:
@@ -945,7 +1265,7 @@ struct Sidebar: View {
                 .font(.title2.bold())
                 .padding(.horizontal, 18)
                 .padding(.top, 18)
-            Text("GitHub 开源应用浏览器")
+            Text(model.text("appSubtitle"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 18)
@@ -955,7 +1275,7 @@ struct Sidebar: View {
                 VStack(alignment: .leading, spacing: 16) {
                     VStack(spacing: 4) {
                         ForEach([AppSection.search]) { section in
-                            SidebarButton(title: section.rawValue, icon: section.icon, selected: model.section == section) {
+                            SidebarButton(title: model.title(for: section), icon: section.icon, selected: model.section == section) {
                                 model.navigate(to: section)
                             }
                         }
@@ -963,14 +1283,14 @@ struct Sidebar: View {
 
                     Divider().padding(.horizontal, 12)
 
-                    Text("分类")
+                    Text(model.text("categories"))
                         .font(.caption.weight(.bold))
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 18)
 
                     LazyVStack(spacing: 2) {
                         ForEach(AppCategory.allCases) { category in
-                            SidebarButton(title: category.rawValue, icon: category.symbol, selected: model.section == .catalog && model.category == category) {
+                            SidebarButton(title: model.title(for: category), icon: category.symbol, selected: model.section == .catalog && model.category == category) {
                                 model.choose(category: category)
                             }
                         }
@@ -980,7 +1300,7 @@ struct Sidebar: View {
 
                     VStack(spacing: 4) {
                         ForEach([AppSection.collections, .downloads, .updates, .settings, .account]) { section in
-                            SidebarButton(title: section == .account && model.isLoggedIn ? "个人中心" : section.rawValue, icon: section.icon, selected: model.section == section) {
+                            SidebarButton(title: model.title(for: section), icon: section.icon, selected: model.section == section) {
                                 model.navigate(to: section)
                             }
                         }
@@ -1029,7 +1349,7 @@ struct TopBar: View {
         HStack(spacing: 12) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
-            TextField("输入仓库名可精确排序，例如 iina、rectangle、utm", text: $model.query)
+            TextField(model.text("searchPlaceholder"), text: $model.query)
                 .textFieldStyle(.plain)
                 .focused($searchFocused)
                 .onSubmit { Task { await model.performSearch() } }
@@ -1048,7 +1368,7 @@ struct TopBar: View {
             Button {
                 Task { await model.performSearch() }
             } label: {
-                Label("搜索", systemImage: "arrow.right")
+                Label(model.text("search"), systemImage: "arrow.right")
             }
             .buttonStyle(.borderedProminent)
             .disabled(model.isLoading)
@@ -1056,7 +1376,7 @@ struct TopBar: View {
             Button {
                 NSWorkspace.shared.open(URL(string: "https://github.com/new")!)
             } label: {
-                Label("提交项目", systemImage: "plus")
+                Label(model.text("submitProject"), systemImage: "plus")
             }
         }
         .padding(16)
@@ -1070,10 +1390,10 @@ struct MainBrowserView: View {
         HStack(spacing: 0) {
             RepositoryListView(
                 repositories: model.visibleRepositories,
-                title: model.section == .search ? "搜索结果" : model.category.rawValue,
+                title: model.section == .search ? model.text("searchResults") : model.title(for: model.category),
                 empty: model.section == .search
-                    ? EmptyStateConfig(title: "没有搜索结果", message: "试试更短的仓库名，或回到推荐项目继续浏览。", icon: "magnifyingglass", primaryTitle: "查看推荐", primaryAction: { model.navigate(to: .catalog) })
-                    : EmptyStateConfig(title: "推荐页暂时为空", message: "网络失败时会保留离线示例，也可以重新加载热门前 100。", icon: "sparkles", primaryTitle: "重新加载", primaryAction: { Task { await model.loadDiscover(force: true) } })
+                    ? EmptyStateConfig(title: "没有搜索结果", message: "试试更短的仓库名，或回到推荐项目继续浏览。", icon: "magnifyingglass", primaryTitle: model.text("viewRecommended"), primaryAction: { model.navigate(to: .catalog) })
+                    : EmptyStateConfig(title: "推荐页暂时为空", message: "网络失败时会保留离线示例，也可以重新加载热门前 100。", icon: "sparkles", primaryTitle: model.text("refresh"), primaryAction: { Task { await model.loadDiscover(force: true) } })
             )
             .frame(width: 560)
             Divider()
@@ -1103,7 +1423,7 @@ struct RepositoryListView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
                         .font(.title2.bold())
-                    Text(model.section == .search ? "按仓库名精确度、stars 和更新时间排序" : "GitHub 热门前 100，滚动浏览")
+                    Text(model.section == .search ? model.text("searchSubtitle") : model.text("recommendedSubtitle"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -1131,7 +1451,7 @@ struct RepositoryListView: View {
                         if model.section == .catalog && model.canLoadMoreDiscover {
                             HStack(spacing: 10) {
                                 ProgressView().controlSize(.small)
-                                Text("继续加载热门项目...")
+                                Text(model.text("continueLoading"))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -1189,7 +1509,7 @@ struct RepositoryRow: View {
                     Text(repository.displayName)
                         .font(.headline)
                     Spacer()
-                    Text(repository.category.rawValue)
+                    Text(model.title(for: repository.category))
                         .font(.caption.weight(.semibold))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
@@ -1204,7 +1524,7 @@ struct RepositoryRow: View {
                     Label(shortNumber(repository.stars), systemImage: "star.fill")
                     Text(repository.license)
                     Text(repository.language)
-                    Text(repository.matchReason)
+                    Text(model.matchReason(for: repository))
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -1250,7 +1570,7 @@ struct DetailHeader: View {
                     Text(repository.displayName)
                         .font(.largeTitle.bold())
                     Button {
-                        model.toggleFavorite(repository)
+                        Task { await model.toggleFavorite(repository) }
                     } label: {
                         Image(systemName: model.isFavorite(repository) ? "star.fill" : "star")
                     }
@@ -1460,14 +1780,25 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section("GitHub") {
-                SecureField("Personal Access Token，可选", text: $model.token)
-                Text("Token 会保存在本机 macOS Keychain，不写入普通配置文件。")
+                SecureField(model.text("githubToken"), text: $model.token)
+                Text(model.text("tokenKeychain"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
-            Section("下载源") {
-                Picker("默认下载源", selection: $model.selectedSourceID) {
+            Section(model.text("language")) {
+                Picker(model.text("interfaceLanguage"), selection: $model.appLanguage) {
+                    ForEach(AppLanguage.allCases) { language in
+                        Text(language.displayName).tag(language)
+                    }
+                }
+                Text(model.text("localizationNote"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section(model.text("downloadSource")) {
+                Picker(model.text("defaultDownloadSource"), selection: $model.selectedSourceID) {
                     ForEach(model.sources.filter(\.enabled)) { source in
                         Text(source.name).tag(source.id)
                     }
@@ -1484,15 +1815,10 @@ struct SettingsView: View {
                 }
             }
 
-            Section("本地化") {
-                Text("当前支持简体中文界面和基础仓库文档展示。仓库文档不会覆盖项目原始 README、Release 或许可证。")
-                    .foregroundStyle(.secondary)
-            }
-
             Button {
                 model.saveSettings()
             } label: {
-                Label("保存设置", systemImage: "checkmark")
+                Label(model.text("saveSettings"), systemImage: "checkmark")
             }
             .buttonStyle(.borderedProminent)
         }
