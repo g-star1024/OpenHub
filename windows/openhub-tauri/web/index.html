@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OpenHub</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main id="app" class="app-shell">
+      <aside class="sidebar">
+        <header class="brand">
+          <img src="../src-tauri/icons/icon.png" alt="" />
+          <div>
+            <h1>OpenHub</h1>
+            <p data-i18n="appSubtitle">GitHub 开源应用浏览器</p>
+          </div>
+        </header>
+
+        <nav class="nav-group top-nav">
+          <button class="nav-item" data-view="search">
+            <span>⌕</span>
+            <strong data-i18n="search">搜索</strong>
+          </button>
+        </nav>
+
+        <section class="category-section">
+          <p class="section-label" data-i18n="categories">分类</p>
+          <div id="categoryList" class="nav-group category-list"></div>
+        </section>
+
+        <nav class="nav-group bottom-nav">
+          <button class="nav-item" data-view="favorites">
+            <span>☆</span>
+            <strong data-i18n="favorites">收藏</strong>
+          </button>
+          <button class="nav-item" data-view="downloads">
+            <span>↓</span>
+            <strong data-i18n="downloads">下载</strong>
+          </button>
+          <button class="nav-item" data-view="updates">
+            <span>↻</span>
+            <strong data-i18n="updates">更新</strong>
+          </button>
+          <button class="nav-item" data-view="settings">
+            <span>⚙</span>
+            <strong data-i18n="settings">设置</strong>
+          </button>
+          <button class="nav-item" data-view="account">
+            <span>◎</span>
+            <strong id="accountNavText" data-i18n="account">登录</strong>
+          </button>
+        </nav>
+      </aside>
+
+      <section class="workspace">
+        <header class="topbar">
+          <div class="search-box">
+            <span>⌕</span>
+            <input id="searchInput" data-i18n-placeholder="searchPlaceholder" placeholder="输入仓库名可精确排序，例如 iina、rectangle、utm" />
+          </div>
+          <select id="sourceSelect" aria-label="download source"></select>
+          <button id="searchButton" class="primary" data-i18n="search">搜索</button>
+          <button id="submitButton" data-i18n="submitProject">提交项目</button>
+        </header>
+
+        <div class="content-grid">
+          <section class="list-pane">
+            <div class="pane-title">
+              <div>
+                <h2 id="listTitle">推荐</h2>
+                <p id="listSubtitle">GitHub 热门前 100，滚动浏览</p>
+              </div>
+              <span id="loadingIndicator" class="spinner hidden"></span>
+            </div>
+            <div id="repoList" class="repo-list"></div>
+          </section>
+
+          <section class="detail-pane">
+            <div id="detailContent" class="detail-content"></div>
+          </section>
+        </div>
+
+        <footer class="statusbar">
+          <span id="statusText">准备就绪</span>
+        </footer>
+      </section>
+    </main>
+
+    <script src="./app.js" type="module"></script>
+  </body>
+</html>

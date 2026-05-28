@@ -1,0 +1,15 @@
+{
+  "name": "openhub-windows",
+  "private": true,
+  "version": "1.0.0",
+  "description": "OpenHub Tauri client for Windows 10 and Windows 11.",
+  "type": "module",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "build:windows": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}

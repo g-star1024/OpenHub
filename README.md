@@ -2,7 +2,7 @@
 
 中文 | [English](#english)
 
-OpenHub 是一个免费开源的 macOS 客户端，用于发现、收藏、查看和下载 GitHub 上的开源应用、开发者工具和命令行工具。
+OpenHub 是一个免费开源的桌面客户端，用于发现、收藏、查看和下载 GitHub 上的开源应用、开发者工具和命令行工具。当前包含 macOS 原生版和独立 Windows/Tauri 版源码。
 
 ![OpenHub icon](Assets/app-icon-source.png)
 
@@ -22,6 +22,7 @@ OpenHub 是一个免费开源的 macOS 客户端，用于发现、收藏、查�
 - GitHub Token 存储在 macOS Keychain
 - 界面语言设置，支持简体中文和 English
 - 标准 macOS `.icns` 应用图标
+- Windows/Tauri 版本源码，面向 Windows 10 和 Windows 11
 
 ## 系统要求
 
@@ -48,6 +49,18 @@ dist/OpenHub.zip
 dist/OpenHub.dmg
 ```
 
+## Windows/Tauri 版本
+
+Windows 版本位于 `windows/openhub-tauri`，和 macOS SwiftUI 工程隔离。
+
+```powershell
+cd windows/openhub-tauri
+npm install
+npm run build:windows
+```
+
+Windows 安装包需要在 Windows 10/11 或 GitHub Actions `windows-latest` 环境构建。仓库内已提供 `.github/workflows/windows-tauri.yml`，可手动触发生成 `.exe` 和 `.msi`。
+
 ## 分发说明
 
 OpenHub 不重新分发第三方二进制文件。下载资源来自项目维护者发布的 GitHub Release Assets。下载加速源只改变传输通道，不改变文件来源声明。
@@ -62,6 +75,8 @@ OpenHub/
   Assets/
   docs/
   design/
+  windows/openhub-tauri/
+  .github/workflows/windows-tauri.yml
   scripts/package_app.sh
   Package.swift
   README.md
@@ -69,7 +84,7 @@ OpenHub/
 
 ## English
 
-OpenHub is a free and open-source macOS client for discovering, collecting, viewing, and downloading open-source apps, developer tools, and CLI utilities from GitHub.
+OpenHub is a free and open-source desktop client for discovering, collecting, viewing, and downloading open-source apps, developer tools, and CLI utilities from GitHub. It currently includes the native macOS app and a separate Windows/Tauri source tree.
 
 ![OpenHub icon](Assets/app-icon-source.png)
 
@@ -89,6 +104,7 @@ OpenHub is a free and open-source macOS client for discovering, collecting, view
 - GitHub Token stored in macOS Keychain
 - Interface language settings for Simplified Chinese and English
 - Standard macOS `.icns` app icon
+- Windows/Tauri source for Windows 10 and Windows 11
 
 ## Requirements
 
@@ -114,6 +130,18 @@ dist/OpenHub.app
 dist/OpenHub.zip
 dist/OpenHub.dmg
 ```
+
+## Windows/Tauri
+
+The Windows edition lives in `windows/openhub-tauri` and is isolated from the macOS SwiftUI project.
+
+```powershell
+cd windows/openhub-tauri
+npm install
+npm run build:windows
+```
+
+Windows installers must be built on Windows 10/11 or GitHub Actions `windows-latest`. The repository includes `.github/workflows/windows-tauri.yml` to produce `.exe` and `.msi` artifacts.
 
 ## Distribution
 

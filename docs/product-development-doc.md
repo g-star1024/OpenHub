@@ -4,7 +4,7 @@
 
 **产品名称**：OpenHub
 
-**一句话定位**：一个免费开源的 macOS 第三方应用，用来发现、收藏、展示和下载 GitHub 上的开源桌面应用、CLI 工具和开发者工具。
+**一句话定位**：一个免费开源的桌面应用，用来发现、收藏、展示和下载 GitHub 上的开源桌面应用、CLI 工具和开发者工具。
 
 **核心价值**：
 
@@ -23,7 +23,7 @@
 
 **主要用户**：
 
-- macOS 用户：想找免费、开源、可信的桌面应用。
+- macOS、Windows 10、Windows 11 用户：想找免费、开源、可信的桌面应用。
 - 开发者：想发现 CLI、开发效率工具、菜单栏工具、编辑器扩展、AI 工具等。
 - 开源维护者：希望自己的 macOS 应用获得更好的展示和分发入口。
 
@@ -52,6 +52,22 @@
 - 不重新分发第三方二进制包，除非项目许可证和维护者明确允许。
 - 不替代 Homebrew、MacPorts 或 App Store，可以和它们做深链接或安装建议。
 - 不承诺所有 GitHub 项目都能一键安装，因为很多项目没有标准化 Release 包。
+
+## 3.1 平台与代码组织
+
+- macOS 正式版：
+  - 路径：`Sources/GitHubAppHub`。
+  - 技术栈：SwiftUI + AppKit + Swift Package Manager。
+  - 打包脚本：`scripts/package_app.sh`。
+  - 产物：`OpenHub.app`、`OpenHub.dmg`、`OpenHub.zip`。
+- Windows 10 / Windows 11 版本：
+  - 路径：`windows/openhub-tauri`。
+  - 技术栈：Tauri v2 + Rust + 静态 Web 前端。
+  - 产物：NSIS `.exe` 安装包和 MSI `.msi` 安装包。
+  - Windows 代码必须和 macOS 原生代码隔离，不能影响 macOS 打包脚本和 SwiftUI 工程。
+- CI 打包：
+  - Windows 安装包通过 `.github/workflows/windows-tauri.yml` 在 `windows-latest` 环境构建。
+  - 本地 macOS 环境只负责源码、前端静态校验、macOS 包和源码包。
 
 ## 4. 核心功能
 
@@ -242,6 +258,22 @@
   - English：Recommended、Popular、Productivity、Developer Tools 等。
   - 列表标题、侧边栏分类入口、项目卡片分类标签必须同步切换。
 - 仓库原始信息、Release 文本和项目 README 不做强制翻译，只清洗异常文本。
+
+### 4.12 Windows Tauri 版
+
+- 首版目标：
+  - 支持 Windows 10 和 Windows 11。
+  - 默认进入推荐分类。
+  - 支持分类浏览、滚动加载、分类预加载、搜索、收藏、下载链接打开、下载记录、设置中心、语言切换、GitHub Token 登录和 Star 同步。
+- 技术约束：
+  - Windows 版不复用 macOS SwiftUI/AppKit 代码。
+  - 前端逻辑集中在 `windows/openhub-tauri/web`。
+  - Tauri 壳和 Windows 打包配置集中在 `windows/openhub-tauri/src-tauri`。
+  - 设置和 Token 首版存储在 Tauri WebView 本地存储，后续迁移到 Tauri 安全存储插件。
+- 打包要求：
+  - 本地 Windows 环境可执行 `windows/openhub-tauri/scripts/build-windows.ps1`。
+  - GitHub Actions 可手动触发 `Build Windows Tauri` 工作流。
+  - 产物上传为 `OpenHub-Windows` artifact，包含 `.exe` 和 `.msi`。
 
 ## 5. 数据来源与 GitHub API
 
