@@ -1,0 +1,129 @@
+<svg width="1600" height="1000" viewBox="0 0 1600 1000" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1600" height="1000" fill="#F4F1EA"/>
+  <rect x="120" y="70" width="1360" height="860" rx="18" fill="#FDFBF7" stroke="#D8D1C4" stroke-width="1.5"/>
+  <rect x="120" y="70" width="1360" height="54" rx="18" fill="#ECE7DD"/>
+  <path d="M120 106C120 96.0589 128.059 88 138 88H1462C1471.94 88 1480 96.0589 1480 106V124H120V106Z" fill="#ECE7DD"/>
+  <circle cx="151" cy="97" r="7" fill="#FF5F57"/>
+  <circle cx="174" cy="97" r="7" fill="#FFBD2E"/>
+  <circle cx="197" cy="97" r="7" fill="#28C840"/>
+
+  <rect x="120" y="124" width="232" height="806" fill="#EEE8DD"/>
+  <line x1="352" y1="124" x2="352" y2="930" stroke="#D8D1C4"/>
+
+  <text x="150" y="166" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Arial, sans-serif" font-size="24" font-weight="700" fill="#1D1B18">AppHub</text>
+  <text x="150" y="190" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="12" fill="#736B5D">Open-source apps from GitHub</text>
+
+  <rect x="144" y="224" width="184" height="38" rx="8" fill="#2F6F73"/>
+  <text x="178" y="248" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="14" font-weight="600" fill="#FFFFFF">Discover</text>
+  <circle cx="162" cy="243" r="6" fill="#FFFFFF"/>
+
+  <text x="178" y="300" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="14" fill="#4B463E">Search</text>
+  <rect x="157" y="290" width="11" height="11" rx="5.5" stroke="#7A7164" stroke-width="2"/>
+  <line x1="166" y1="300" x2="172" y2="306" stroke="#7A7164" stroke-width="2" stroke-linecap="round"/>
+
+  <text x="178" y="344" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="14" fill="#4B463E">Collections</text>
+  <rect x="156" y="331" width="14" height="16" rx="3" stroke="#7A7164" stroke-width="2"/>
+
+  <text x="178" y="388" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="14" fill="#4B463E">Downloads</text>
+  <path d="M162 374V390M155 383L162 390L169 383" stroke="#7A7164" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <text x="178" y="432" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="14" fill="#4B463E">Updates</text>
+  <path d="M156 419C160 414 168 415 171 421M171 421H166M171 421V416M170 429C166 434 158 433 155 427M155 427H160M155 427V432" stroke="#7A7164" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <line x1="144" y1="470" x2="328" y2="470" stroke="#D8D1C4"/>
+  <text x="150" y="505" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="12" font-weight="700" fill="#8A8172">CATEGORIES</text>
+  <text x="150" y="542" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="14" fill="#4B463E">Developer Tools</text>
+  <text x="150" y="578" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="14" fill="#4B463E">Productivity</text>
+  <text x="150" y="614" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="14" fill="#4B463E">Menu Bar</text>
+  <text x="150" y="650" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="14" fill="#4B463E">AI Tools</text>
+  <text x="150" y="686" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="14" fill="#4B463E">Security</text>
+
+  <rect x="376" y="146" width="650" height="48" rx="12" fill="#FFFFFF" stroke="#D8D1C4"/>
+  <text x="422" y="176" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="15" fill="#8A8172">Search GitHub apps, tools, menu bar utilities...</text>
+  <path d="M398 164C402 160 410 160 414 164C418 168 418 176 414 180C410 184 402 184 398 180C394 176 394 168 398 164Z" stroke="#8A8172" stroke-width="2"/>
+  <line x1="413" y1="179" x2="420" y2="186" stroke="#8A8172" stroke-width="2" stroke-linecap="round"/>
+
+  <rect x="1046" y="146" width="114" height="48" rx="12" fill="#FFFFFF" stroke="#D8D1C4"/>
+  <text x="1077" y="176" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="14" font-weight="600" fill="#4B463E">Filters</text>
+  <rect x="1174" y="146" width="128" height="48" rx="12" fill="#2F6F73"/>
+  <text x="1206" y="176" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="14" font-weight="700" fill="#FFFFFF">Submit App</text>
+
+  <text x="376" y="246" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Arial, sans-serif" font-size="28" font-weight="750" fill="#1D1B18">Discover open-source Mac apps</text>
+  <text x="376" y="276" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="14" fill="#70675A">Curated GitHub releases with architecture, license, update and trust signals.</text>
+
+  <rect x="376" y="310" width="180" height="36" rx="18" fill="#DBE9E4"/>
+  <text x="407" y="333" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="13" font-weight="600" fill="#275D60">Apple Silicon</text>
+  <rect x="568" y="310" width="124" height="36" rx="18" fill="#FFF4CE"/>
+  <text x="601" y="333" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="13" font-weight="600" fill="#765C12">.dmg</text>
+  <rect x="704" y="310" width="146" height="36" rx="18" fill="#EFEAE0" stroke="#D8D1C4"/>
+  <text x="736" y="333" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="13" font-weight="600" fill="#4B463E">Recently active</text>
+  <rect x="862" y="310" width="120" height="36" rx="18" fill="#EFEAE0" stroke="#D8D1C4"/>
+  <text x="897" y="333" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="13" font-weight="600" fill="#4B463E">MIT</text>
+
+  <rect x="376" y="378" width="444" height="116" rx="10" fill="#FFFFFF" stroke="#D8D1C4"/>
+  <rect x="398" y="400" width="56" height="56" rx="12" fill="#2F6F73"/>
+  <text x="412" y="437" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Arial, sans-serif" font-size="24" font-weight="800" fill="#FFFFFF">R</text>
+  <text x="474" y="415" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="17" font-weight="700" fill="#1D1B18">Raycast Extensions</text>
+  <text x="474" y="440" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="13" fill="#70675A">Productivity launcher and extension ecosystem.</text>
+  <text x="474" y="468" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="12" fill="#8A8172">★ 24.3k   MIT   latest v1.82   universal dmg</text>
+  <rect x="712" y="414" width="78" height="32" rx="8" fill="#DBE9E4"/>
+  <text x="733" y="435" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="12" font-weight="700" fill="#275D60">Open</text>
+
+  <rect x="376" y="512" width="444" height="116" rx="10" fill="#FFFFFF" stroke="#D8D1C4"/>
+  <rect x="398" y="534" width="56" height="56" rx="12" fill="#E65F4E"/>
+  <text x="413" y="571" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Arial, sans-serif" font-size="24" font-weight="800" fill="#FFFFFF">O</text>
+  <text x="474" y="549" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="17" font-weight="700" fill="#1D1B18">OrbStack</text>
+  <text x="474" y="574" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="13" fill="#70675A">Fast Docker and Linux machines for macOS.</text>
+  <text x="474" y="602" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="12" fill="#8A8172">★ 11.8k   Apache-2.0   pkg   arm64</text>
+  <rect x="712" y="548" width="78" height="32" rx="8" fill="#EFEAE0"/>
+  <text x="720" y="569" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="12" font-weight="700" fill="#4B463E">Details</text>
+
+  <rect x="376" y="646" width="444" height="116" rx="10" fill="#FFFFFF" stroke="#D8D1C4"/>
+  <rect x="398" y="668" width="56" height="56" rx="12" fill="#6B5FB5"/>
+  <text x="413" y="705" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Arial, sans-serif" font-size="24" font-weight="800" fill="#FFFFFF">I</text>
+  <text x="474" y="683" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="17" font-weight="700" fill="#1D1B18">IINA</text>
+  <text x="474" y="708" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="13" fill="#70675A">Modern media player built for macOS.</text>
+  <text x="474" y="736" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="12" fill="#8A8172">★ 39.1k   GPL-3.0   dmg   universal</text>
+  <rect x="712" y="682" width="78" height="32" rx="8" fill="#EFEAE0"/>
+  <text x="720" y="703" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="12" font-weight="700" fill="#4B463E">Details</text>
+
+  <rect x="846" y="378" width="584" height="480" rx="12" fill="#FFFFFF" stroke="#D8D1C4"/>
+  <rect x="846" y="378" width="584" height="120" rx="12" fill="#F8F5EF"/>
+  <rect x="884" y="418" width="64" height="64" rx="14" fill="#2F6F73"/>
+  <text x="901" y="460" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Arial, sans-serif" font-size="28" font-weight="800" fill="#FFFFFF">R</text>
+  <text x="970" y="431" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Arial, sans-serif" font-size="23" font-weight="750" fill="#1D1B18">Raycast Extensions</text>
+  <text x="970" y="458" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="13" fill="#70675A">raycast/extensions</text>
+  <text x="970" y="481" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="12" fill="#8A8172">★ 24.3k   forks 3.2k   updated 2 days ago</text>
+  <rect x="1278" y="424" width="112" height="40" rx="10" fill="#2F6F73"/>
+  <text x="1304" y="449" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="14" font-weight="700" fill="#FFFFFF">Download</text>
+
+  <text x="884" y="542" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="15" font-weight="700" fill="#1D1B18">Available downloads</text>
+  <rect x="884" y="562" width="506" height="54" rx="9" fill="#FAF8F3" stroke="#E2DCCE"/>
+  <text x="904" y="585" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="14" font-weight="650" fill="#1D1B18">Raycast-1.82.0-universal.dmg</text>
+  <text x="904" y="603" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="11" fill="#8A8172">Universal · DMG · 92 MB · GitHub Release Asset</text>
+  <rect x="1300" y="574" width="70" height="30" rx="8" fill="#DBE9E4"/>
+  <text x="1318" y="594" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="12" font-weight="700" fill="#275D60">Get</text>
+
+  <rect x="884" y="634" width="506" height="54" rx="9" fill="#FAF8F3" stroke="#E2DCCE"/>
+  <text x="904" y="657" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="14" font-weight="650" fill="#1D1B18">brew install --cask raycast</text>
+  <text x="904" y="675" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="11" fill="#8A8172">Homebrew Cask · install command · user confirmation required</text>
+  <rect x="1300" y="646" width="70" height="30" rx="8" fill="#EFEAE0"/>
+  <text x="1318" y="666" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="12" font-weight="700" fill="#4B463E">Copy</text>
+
+  <text x="884" y="730" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="15" font-weight="700" fill="#1D1B18">Trust signals</text>
+  <rect x="884" y="752" width="150" height="54" rx="9" fill="#DBE9E4"/>
+  <text x="906" y="776" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="12" font-weight="700" fill="#275D60">License</text>
+  <text x="906" y="793" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="12" fill="#275D60">MIT detected</text>
+  <rect x="1056" y="752" width="150" height="54" rx="9" fill="#FFF4CE"/>
+  <text x="1078" y="776" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="12" font-weight="700" fill="#765C12">Checksum</text>
+  <text x="1078" y="793" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="12" fill="#765C12">Not provided</text>
+  <rect x="1228" y="752" width="162" height="54" rx="9" fill="#E9E7F7"/>
+  <text x="1250" y="776" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="12" font-weight="700" fill="#514894">Maintenance</text>
+  <text x="1250" y="793" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="12" fill="#514894">Active release</text>
+
+  <rect x="376" y="790" width="444" height="68" rx="10" fill="#F8F5EF" stroke="#D8D1C4"/>
+  <text x="398" y="818" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="14" font-weight="700" fill="#1D1B18">Download queue</text>
+  <rect x="398" y="832" width="310" height="8" rx="4" fill="#E1DACB"/>
+  <rect x="398" y="832" width="182" height="8" rx="4" fill="#2F6F73"/>
+  <text x="724" y="842" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', Arial, sans-serif" font-size="12" fill="#70675A">58%</text>
+</svg>
