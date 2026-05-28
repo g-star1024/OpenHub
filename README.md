@@ -7,7 +7,7 @@ OpenHub 是一个免费开源的 macOS 第三方客户端，用来发现、收�
 ## 功能特性
 
 - GitHub 仓库搜索
-- 推荐页首屏加载 GitHub 热门前 20，滚动最多加载前 100
+- 推荐页GitHub 热门前 20，滚动最多加载前 100
 - 推荐 / 搜索频道独立状态与稳定切换
 - 搜索结果按仓库名精确度重排
 - 仓库简介和 Release 说明异常文本清洗
@@ -58,7 +58,7 @@ git init
 git add .
 git commit -m "Initial OpenHub release"
 git branch -M main
-git remote add origin https://github.com/<your-name>/OpenHub.git
+git remote add origin https://github.com/g-star1024/OpenHub.git
 git push -u origin main
 ```
 
