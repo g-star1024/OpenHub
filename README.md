@@ -4,7 +4,7 @@
 
 OpenHub 是一个免费开源的桌面客户端，用于发现、收藏、查看和下载 GitHub 上的开源应用、开发者工具和命令行工具。当前包含 macOS 原生版和独立 Windows/Tauri 版源码。
 
-![OpenHub icon](Assets/app-icon-source.png)
+<img src="Assets/app-icon-source.png" alt="OpenHub icon" width="128" height="128">
 
 ## 特性
 
@@ -18,19 +18,23 @@ OpenHub 是一个免费开源的桌面客户端，用于发现、收藏、查看
 - 下载源切换与自定义代理模板
 - 本地收藏、下载记录与稳定空状态
 - 登录 GitHub 后收藏同步 GitHub Star
+- GitHub App 登录使用 Starring 读写权限同步 Star；权限不足时会保留本地收藏
 - GitHub 登录、个人中心、我的仓库与星标仓库
+- 个人中心仓库和星标仓库支持搜索并打开 GitHub 网页端
 - Fork 仓库、检索个人仓库、克隆到本地工作区
 - 内置轻量代码编辑器，支持保存、commit 并同步到 GitHub
 - 代码编辑器支持基础语法高亮、文件搜索、Git 状态和 diff 概览
 - 下载任务进度展示，完成后可直接打开安装包或定位本地文件夹
 - 下载列表支持取消下载和删除下载记录
 - 代码工作区支持一键同步当前仓库全部本地改动到 GitHub
+- 代码同步展示阶段进度并在完成后提示任务完成
 - 支持修改本地仓库路径
 - 代理设置，可加速 GitHub API 与 git clone / push
-- GitHub Token 存储在 macOS Keychain
+- GitHub App 登录，session id 和访问令牌存储在 macOS Keychain
 - 界面语言设置，支持简体中文和 English
 - 标准 macOS `.icns` 应用图标
 - Windows/Tauri 版本源码，面向 Windows 10 和 Windows 11
+- Cloudflare Worker + KV + D1 后端，用于 GitHub App 登录
 
 ## 系统要求
 
@@ -69,11 +73,29 @@ npm run build:windows
 
 Windows 安装包需要在 Windows 10/11 或 GitHub Actions `windows-latest` 环境构建。仓库内已提供 `.github/workflows/windows-tauri.yml`，可手动触发生成 `.exe` 和 `.msi`。
 
+## Cloudflare 后端
+
+Cloudflare 后端位于 `backend/cloudflare`，用于 GitHub App 登录。它使用 Workers 承载 OAuth 回调，KV 保存短期 state，D1 保存登录 session。
+
+详见 [backend/cloudflare](backend/cloudflare)。
+
 ## 分发说明
 
 OpenHub 不重新分发第三方二进制文件。下载资源来自项目维护者发布的 GitHub Release Assets。下载加速源只改变传输通道，不改变文件来源声明。
 
 当前打包脚本使用 ad-hoc 签名，适合本地测试和开源发布准备。面向普通用户大范围分发前，建议使用 Apple Developer ID 签名并完成 notarization。
+
+## 隐私政策
+
+OpenHub 是本地优先的开源桌面客户端。应用不会内置第三方统计 SDK，不会主动收集、出售或上传用户的个人数据。
+
+OpenHub 会在本机保存必要配置，包括界面语言、下载源、代理设置、本地仓库路径、收藏列表、下载记录、GitHub App session id 和 GitHub 访问令牌。macOS 版本会将 GitHub session id 和访问令牌保存到系统 Keychain；其他普通配置保存在本机用户环境中。
+
+OpenHub 会在用户主动使用相关功能时请求 GitHub API，例如搜索仓库、读取 Release、登录 GitHub、读取个人仓库、同步 Star、Fork、克隆仓库或推送本地代码。GitHub 请求受 GitHub 隐私政策和账号权限控制。OpenHub 的 Cloudflare 后端仅用于 GitHub App OAuth 回调和 session 中转；OpenHub 不会把仓库代码或下载记录发送到 OpenHub 自有服务器。
+
+下载文件来自项目维护者发布的 GitHub Release Assets 或用户配置的下载加速源。若用户启用代理或自定义加速源，请自行确认该服务的可信度和隐私政策。
+
+代码编辑、保存、commit 和 push 操作均由用户主动触发。OpenHub 不会在后台自动上传本地代码。
 
 ## 项目结构
 
@@ -83,6 +105,7 @@ OpenHub/
   Assets/
   docs/
   design/
+  backend/cloudflare/
   windows/openhub-tauri/
   .github/workflows/windows-tauri.yml
   scripts/package_app.sh
@@ -94,7 +117,7 @@ OpenHub/
 
 OpenHub is a free and open-source desktop client for discovering, collecting, viewing, and downloading open-source apps, developer tools, and CLI utilities from GitHub. It currently includes the native macOS app and a separate Windows/Tauri source tree.
 
-![OpenHub icon](Assets/app-icon-source.png)
+<img src="Assets/app-icon-source.png" alt="OpenHub icon" width="128" height="128">
 
 ## Features
 
@@ -108,19 +131,23 @@ OpenHub is a free and open-source desktop client for discovering, collecting, vi
 - Download source switching and custom proxy templates
 - Local favorites, download history, and stable empty states
 - GitHub Star sync after signing in
+- GitHub App login uses Starring read/write permission for Star sync and keeps local favorites if remote sync is denied
 - GitHub sign-in, account center, owned repositories, and starred repositories
+- Account repositories and starred repositories can be searched and opened on GitHub web
 - Fork repositories, search owned repositories, and clone into a local workspace
 - Lightweight built-in code editor with save, commit, and GitHub sync
 - Basic syntax highlighting, file search, Git status, and diff overview
 - Download progress list with open/install and local folder actions
 - Cancel active downloads and delete download records
 - One-click sync for all local changes in the current repository
+- Repository sync shows staged progress and reports completion
 - Configurable local repository workspace path
 - Proxy settings for GitHub API and git clone / push
-- GitHub Token stored in macOS Keychain
+- GitHub App login with session id and access token stored in macOS Keychain
 - Interface language settings for Simplified Chinese and English
 - Standard macOS `.icns` app icon
 - Windows/Tauri source for Windows 10 and Windows 11
+- Cloudflare Worker + KV + D1 backend for GitHub App login
 
 ## Requirements
 
@@ -159,8 +186,26 @@ npm run build:windows
 
 Windows installers must be built on Windows 10/11 or GitHub Actions `windows-latest`. The repository includes `.github/workflows/windows-tauri.yml` to produce `.exe` and `.msi` artifacts.
 
+## Cloudflare Backend
+
+The Cloudflare backend lives in `backend/cloudflare` and powers GitHub App login. It uses Workers for OAuth callbacks, KV for short-lived state, and D1 for login sessions.
+
+See [backend/cloudflare](backend/cloudflare).
+
 ## Distribution
 
 OpenHub does not redistribute third-party binaries. Downloads come from GitHub Release Assets published by project maintainers. Download mirrors or proxies only change the transport path, not the declared file source.
 
 The current packaging script uses ad-hoc signing for local testing and open-source release preparation. For broad public distribution, use Apple Developer ID signing and notarization.
+
+## Privacy Policy
+
+OpenHub is a local-first open-source desktop client. It does not include third-party analytics SDKs and does not proactively collect, sell, or upload personal data.
+
+OpenHub stores necessary local settings on the user's device, including interface language, download sources, proxy settings, local repository path, favorites, download history, GitHub App session id, and GitHub access token. The macOS app stores the GitHub session id and access token in the system Keychain; regular settings are stored in the local user environment.
+
+OpenHub calls GitHub APIs only when the user uses related features, such as repository search, Release lookup, GitHub sign-in, owned repository lookup, Star sync, Fork, clone, or pushing local code. GitHub requests are governed by GitHub's privacy policy and account permissions. OpenHub's Cloudflare backend is used only for GitHub App OAuth callback and session relay; OpenHub does not send repository code or download history to an OpenHub-owned server.
+
+Downloaded files come from GitHub Release Assets published by project maintainers or user-configured download mirrors/proxies. If users enable a proxy or custom mirror, they should verify that service's trustworthiness and privacy policy.
+
+Code editing, saving, committing, and pushing are explicitly user-triggered. OpenHub does not automatically upload local code in the background.

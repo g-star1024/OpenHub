@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="OpenHub"
 BINARY_NAME="OpenHub"
 APP_VERSION="1.0.0"
+BUNDLE_IDENTIFIER="io.openhub.desktop"
 BUILD_DIR="$ROOT_DIR/.build/release"
 DIST_DIR="$ROOT_DIR/dist"
 APP_DIR="$DIST_DIR/$APP_NAME.app"
@@ -37,7 +38,7 @@ cat > "$CONTENTS_DIR/Info.plist" <<PLIST
   <key>CFBundleDisplayName</key>
   <string>$APP_NAME</string>
   <key>CFBundleIdentifier</key>
-  <string>io.openhub.macos</string>
+  <string>$BUNDLE_IDENTIFIER</string>
   <key>CFBundleVersion</key>
   <string>$APP_VERSION</string>
   <key>CFBundleShortVersionString</key>
@@ -48,6 +49,17 @@ cat > "$CONTENTS_DIR/Info.plist" <<PLIST
   <string>AppIcon</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key>
+      <string>$BUNDLE_IDENTIFIER.auth</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>openhub</string>
+      </array>
+    </dict>
+  </array>
   <key>LSMinimumSystemVersion</key>
   <string>14.0</string>
   <key>NSHighResolutionCapable</key>
