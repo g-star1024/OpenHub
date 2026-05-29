@@ -18,9 +18,13 @@ OpenHub 是一个免费开源的桌面客户端，用于发现、收藏、查看
 - 下载源切换与自定义代理模板
 - 本地收藏、下载记录与稳定空状态
 - 登录 GitHub 后收藏同步 GitHub Star
+- 分类与搜索列表保持浏览选择体验，不展示打开链接和 Star 操作按钮
+- 收藏列表仓库卡片点击后直接打开 GitHub 仓库页面
 - GitHub App 登录使用 Starring 读写权限同步 Star；权限不足时会保留本地收藏
+- 仅保留 GitHub App 登录，避免历史凭据与 App session 权限冲突
 - GitHub 登录、个人中心、我的仓库与星标仓库
-- 个人中心仓库和星标仓库支持搜索并打开 GitHub 网页端
+- 个人中心“我的仓库”和“星标仓库”使用表格切换，默认各加载 20 个并滚动加载更多
+- 个人中心列表使用独立滚动区域，避免未滚动时连续后台分页
 - Fork 仓库、检索个人仓库、克隆到本地工作区
 - 内置轻量代码编辑器，支持保存、commit 并同步到 GitHub
 - 代码编辑器支持基础语法高亮、文件搜索、Git 状态和 diff 概览
@@ -30,10 +34,14 @@ OpenHub 是一个免费开源的桌面客户端，用于发现、收藏、查看
 - 代码同步展示阶段进度并在完成后提示任务完成
 - 支持修改本地仓库路径
 - 代理设置，可加速 GitHub API 与 git clone / push
+- 设置中心支持下载运行错误报告，便于反馈和排查问题
+- 设置中心支持二次确认后清空缓存，包括本机配置、收藏、下载记录、仓库列表缓存、分类缓存、搜索结果和 Keychain 登录信息
+- 代码频道同步会清理 stale index.lock、自动 pull --rebase --autostash，再推送当前分支，并显示 ahead/behind 状态
 - GitHub App 登录，session id 和访问令牌存储在 macOS Keychain
 - 界面语言设置，支持简体中文和 English
 - 标准 macOS `.icns` 应用图标
 - Windows/Tauri 版本源码，面向 Windows 10 和 Windows 11
+- Windows/Tauri 已配置应用窗口、安装包和快捷方式图标
 - Cloudflare Worker + KV + D1 后端，用于 GitHub App 登录
 
 ## 系统要求
@@ -113,6 +121,11 @@ OpenHub/
   README.md
 ```
 
+## 最新开发文档
+
+- [产品开发文档](docs/product-development-doc.md)
+- [2026-05-29 开发更新记录](docs/development-update-2026-05-29.md)
+
 ## English
 
 OpenHub is a free and open-source desktop client for discovering, collecting, viewing, and downloading open-source apps, developer tools, and CLI utilities from GitHub. It currently includes the native macOS app and a separate Windows/Tauri source tree.
@@ -131,9 +144,14 @@ OpenHub is a free and open-source desktop client for discovering, collecting, vi
 - Download source switching and custom proxy templates
 - Local favorites, download history, and stable empty states
 - GitHub Star sync after signing in
+- Favorite repository cards can open the corresponding GitHub repository page
+- Category and search lists keep a clean browsing/selection experience without inline open-link or Star buttons
+- Favorite cards open the corresponding GitHub repository directly when clicked
 - GitHub App login uses Starring read/write permission for Star sync and keeps local favorites if remote sync is denied
+- GitHub App sign-in is the only authentication mode, avoiding conflicts between fallback tokens and App sessions
 - GitHub sign-in, account center, owned repositories, and starred repositories
-- Account repositories and starred repositories can be searched and opened on GitHub web
+- Account repositories and starred repositories use a switchable table, load 20 items initially, and lazy-load more on scroll
+- Account tables use an isolated scroll area to avoid runaway pagination before the user scrolls
 - Fork repositories, search owned repositories, and clone into a local workspace
 - Lightweight built-in code editor with save, commit, and GitHub sync
 - Basic syntax highlighting, file search, Git status, and diff overview
@@ -143,10 +161,14 @@ OpenHub is a free and open-source desktop client for discovering, collecting, vi
 - Repository sync shows staged progress and reports completion
 - Configurable local repository workspace path
 - Proxy settings for GitHub API and git clone / push
+- Settings can export runtime error reports for troubleshooting
+- Settings can clear app cache after confirmation, including local settings, favorites, download history, repository caches, category caches, search results, and Keychain login entries
+- Code sync clears stale index.lock, pulls with rebase/autostash, pushes the current branch, and reports ahead/behind status
 - GitHub App login with session id and access token stored in macOS Keychain
 - Interface language settings for Simplified Chinese and English
 - Standard macOS `.icns` app icon
 - Windows/Tauri source for Windows 10 and Windows 11
+- Windows/Tauri config includes app-window, installer, and shortcut icons
 - Cloudflare Worker + KV + D1 backend for GitHub App login
 
 ## Requirements

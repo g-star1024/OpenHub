@@ -3,6 +3,7 @@ import Foundation
 import AppKit
 import CryptoKit
 import Security
+import AuthenticationServices
 
 struct Repository: Identifiable, Codable, Hashable {
     let id: Int
@@ -154,6 +155,23 @@ struct ProxySettings: Codable, Hashable {
         if trimmed.contains("://") { return URL(string: trimmed) }
         return URL(string: "http://\(trimmed)")
     }
+}
+
+struct RuntimeErrorRecord: Identifiable, Codable, Hashable {
+    let id: UUID
+    let message: String
+    let source: String
+    let section: String
+    let createdAt: Date
+}
+
+struct RuntimeErrorExport: Codable {
+    let app: String
+    let exportedAt: Date
+    let section: String
+    let selectedRepository: String?
+    let status: String
+    let errors: [RuntimeErrorRecord]
 }
 
 struct GitHubUser: Identifiable, Codable, Hashable {
@@ -323,6 +341,13 @@ enum AppSection: String, CaseIterable, Identifiable {
     }
 }
 
+enum AccountRepositoryTab: String, CaseIterable, Identifiable {
+    case owned = "我的仓库"
+    case starred = "星标仓库"
+
+    var id: String { rawValue }
+}
+
 enum AppLanguage: String, Codable, CaseIterable, Identifiable {
     case system = "system"
     case zhHans = "zh-Hans"
@@ -402,8 +427,8 @@ enum L10n {
         "language": "语言",
         "interfaceLanguage": "界面语言",
         "saveSettings": "保存设置",
-        "githubToken": "Personal Access Token，可选",
-        "tokenKeychain": "Token 会保存在本机 macOS Keychain，不写入普通配置文件。",
+        "githubToken": "GitHub App 登录",
+        "tokenKeychain": "OpenHub 仅使用 GitHub App 登录；session id 和 access token 会保存在本机 macOS Keychain。",
         "downloadSource": "下载源",
         "defaultDownloadSource": "默认下载源",
         "localizationNote": "当前支持简体中文和 English。仓库原始内容不会被强制翻译。",
@@ -421,7 +446,6 @@ enum L10n {
         "refresh": "刷新",
         "myRepos": "我的仓库",
         "starredRepos": "星标仓库",
-        "createToken": "创建 Token"
     ]
 
     private static let english: [String: String] = [
@@ -470,8 +494,8 @@ enum L10n {
         "language": "Language",
         "interfaceLanguage": "Interface Language",
         "saveSettings": "Save Settings",
-        "githubToken": "Personal Access Token, optional",
-        "tokenKeychain": "Token is stored locally in macOS Keychain.",
+        "githubToken": "GitHub App Sign In",
+        "tokenKeychain": "OpenHub only uses GitHub App sign-in. The session id and access token are stored locally in macOS Keychain.",
         "downloadSource": "Download Source",
         "defaultDownloadSource": "Default Source",
         "localizationNote": "Supports Simplified Chinese and English. Repository content is not force-translated.",
@@ -489,7 +513,6 @@ enum L10n {
         "refresh": "Refresh",
         "myRepos": "My Repositories",
         "starredRepos": "Starred Repositories",
-        "createToken": "Create Token"
     ]
 }
 
@@ -604,13 +627,13 @@ final class GitHubClient {
         _ = try? await request(url, method: "POST", token: sessionID, body: Data())
     }
 
-    func userRepositories(token: String, page: Int = 1, perPage: Int = 10) async throws -> [Repository] {
+    func userRepositories(token: String, page: Int = 1, perPage: Int = 20) async throws -> [Repository] {
         let data = try await request(URL(string: "https://api.github.com/user/repos?sort=updated&per_page=\(perPage)&page=\(page)")!, token: token)
         let items = try decoder.decode([RepositoryItem].self, from: data)
         return items.map(repository(from:))
     }
 
-    func starredRepositories(token: String, page: Int = 1, perPage: Int = 10) async throws -> [Repository] {
+    func starredRepositories(token: String, page: Int = 1, perPage: Int = 20) async throws -> [Repository] {
         let data = try await request(URL(string: "https://api.github.com/user/starred?sort=updated&per_page=\(perPage)&page=\(page)")!, token: token)
         let items = try decoder.decode([RepositoryItem].self, from: data)
         return items.map(repository(from:))
@@ -691,7 +714,7 @@ final class GitHubClient {
             let message = String(data: data, encoding: .utf8) ?? ""
             if http.statusCode == 403, url.path.contains("/user/starred") {
                 throw NSError(domain: "GitHub", code: http.statusCode, userInfo: [
-                    NSLocalizedDescriptionKey: "GitHub Star 权限不足：GitHub App 需要开启 Starring 读写权限；备用 Token 需要 Starring 写权限，classic token 可使用 public_repo/repo。\(message.isEmpty ? "" : " GitHub: \(message)")"
+                    NSLocalizedDescriptionKey: "GitHub Star 权限不足：请确认 GitHub App 已开启 Starring 读写权限，并在修改权限后重新授权登录。\(message.isEmpty ? "" : " GitHub: \(message)")"
                 ])
             }
             throw NSError(domain: "GitHub", code: http.statusCode, userInfo: [
@@ -891,7 +914,7 @@ enum LocalizationCatalog {
 }
 
 @MainActor
-final class AppStoreModel: ObservableObject {
+final class AppStoreModel: NSObject, ObservableObject, ASWebAuthenticationPresentationContextProviding {
     @Published var section: AppSection = .catalog
     @Published var category: AppCategory = .recommended
     @Published var query = ""
@@ -910,8 +933,11 @@ final class AppStoreModel: ObservableObject {
     @Published var selectedSourceID = "github-original"
     @Published var appLanguage: AppLanguage = .system
     @Published var proxySettings = ProxySettings(enabled: false, server: "")
-    @Published var token = ""
-    @Published var status = "准备就绪"
+    @Published var githubAppAccessToken = ""
+    @Published var status = "准备就绪" {
+        didSet { captureRuntimeErrorIfNeeded(status, source: "status") }
+    }
+    @Published var runtimeErrors: [RuntimeErrorRecord] = []
     @Published var isLoading = false
     @Published var downloadProgress: Double = 0
     @Published var hasLoadedDiscover = false
@@ -930,6 +956,7 @@ final class AppStoreModel: ObservableObject {
     @Published var canLoadMoreStarredRepositories = true
     @Published var accountRepositoryQuery = ""
     @Published var starredRepositoryQuery = ""
+    @Published var accountRepositoryTab: AccountRepositoryTab = .owned
     @Published var workspacePath = ""
     @Published var localRepositories: [LocalRepository] = []
     @Published var selectedLocalRepository: LocalRepository?
@@ -939,6 +966,7 @@ final class AppStoreModel: ObservableObject {
     @Published var codeSearch = ""
     @Published var gitStatusText = ""
     @Published var gitDiffText = ""
+    @Published var gitSyncStateText = "未读取 Git 状态"
     @Published var currentBranch = ""
     @Published var isSyncingRepository = false
     @Published var syncProgress: Double = 0
@@ -948,10 +976,13 @@ final class AppStoreModel: ObservableObject {
     private let client = GitHubClient()
     private let storage = LocalStorage()
     private let keychain = KeychainStore(service: "io.openhub.desktop")
+    private var webAuthenticationSession: ASWebAuthenticationSession?
 
-    init() {
+    override init() {
+        super.init()
         favorites = storage.load([Repository].self, key: "favorites") ?? []
         downloads = storage.load([DownloadRecord].self, key: "downloads") ?? []
+        runtimeErrors = storage.load([RuntimeErrorRecord].self, key: "runtimeErrors") ?? []
         sources = storage.load([DownloadSource].self, key: "sources") ?? sources
         selectedSourceID = storage.load(String.self, key: "selectedSourceID") ?? selectedSourceID
         appLanguage = storage.load(AppLanguage.self, key: "appLanguage") ?? .system
@@ -962,7 +993,8 @@ final class AppStoreModel: ObservableObject {
         categoryRepositories[.recommended] = SampleData.repositories
         categoryCanLoadMore = Dictionary(uniqueKeysWithValues: AppCategory.allCases.map { ($0, true) })
         githubSessionID = keychain.read(account: "github-session-id") ?? ""
-        token = keychain.read(account: "github-token") ?? storage.load(String.self, key: "token") ?? ""
+        githubAppAccessToken = keychain.read(account: "github-app-access-token") ?? ""
+        keychain.delete(account: "github-fallback-token")
         applyProxySettings()
     }
 
@@ -980,6 +1012,10 @@ final class AppStoreModel: ObservableObject {
     }
 
     var isLoggedIn: Bool { githubUser != nil }
+
+    var activeGitHubToken: String {
+        githubAppAccessToken.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
     var canLoadMoreDiscover: Bool {
         categoryCanLoadMore[category, default: true]
@@ -1065,7 +1101,7 @@ final class AppStoreModel: ObservableObject {
         status = nextPage == 1 ? "正在加载 GitHub 热门前 20..." : "正在继续加载热门项目..."
         defer { isLoading = false }
         do {
-            let result = try await client.discoverTop(category: currentCategory, page: nextPage, token: token)
+            let result = try await client.discoverTop(category: currentCategory, page: nextPage, token: activeGitHubToken)
             if nextPage == 1 {
                 categoryRepositories[currentCategory] = result.isEmpty ? fallbackRepositories(for: currentCategory) : result
             } else {
@@ -1111,7 +1147,7 @@ final class AppStoreModel: ObservableObject {
         status = "正在精确搜索 GitHub..."
         defer { isLoading = false }
         do {
-            let result = try await client.search(query: trimmed, token: token)
+            let result = try await client.search(query: trimmed, token: activeGitHubToken)
             searchRepositories = result
             selected = result.first
             status = result.isEmpty ? "没有找到结果" : "找到 \(result.count) 个结果，已按仓库名精确度排序"
@@ -1139,7 +1175,7 @@ final class AppStoreModel: ObservableObject {
 
     func loadRelease(for repository: Repository) async {
         do {
-            latestRelease = try await client.latestRelease(owner: repository.owner, repo: repository.name, token: token)
+            latestRelease = try await client.latestRelease(owner: repository.owner, repo: repository.name, token: activeGitHubToken)
             status = latestRelease?.assets.isEmpty == true ? "最新 Release 没有可下载资源" : "已加载最新 Release"
         } catch {
             latestRelease = nil
@@ -1156,7 +1192,7 @@ final class AppStoreModel: ObservableObject {
         }
         storage.save(favorites, key: "favorites")
 
-        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = activeGitHubToken
         guard !trimmed.isEmpty else {
             status = wasFavorite ? "已取消本地收藏" : "已加入本地收藏"
             return
@@ -1189,13 +1225,119 @@ final class AppStoreModel: ObservableObject {
         storage.save(workspacePath, key: "workspacePath")
         storage.save(proxySettings, key: "proxySettings")
         applyProxySettings()
-        do {
-            try keychain.save(token.trimmingCharacters(in: .whitespacesAndNewlines), account: "github-token")
-        } catch {
-            status = "Token 保存到 Keychain 失败：\(error.localizedDescription)"
-            return
-        }
+        keychain.delete(account: "github-fallback-token")
+        keychain.delete(account: "github-token")
         status = "设置已保存"
+    }
+
+    func exportRuntimeErrors() {
+        let export = RuntimeErrorExport(
+            app: "OpenHub macOS",
+            exportedAt: Date(),
+            section: section.rawValue,
+            selectedRepository: selected?.fullName,
+            status: status,
+            errors: runtimeErrors
+        )
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            encoder.dateEncodingStrategy = .iso8601
+            let data = try encoder.encode(export)
+            let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+            let formatter = ISO8601DateFormatter()
+            let filename = "openhub-runtime-errors-\(formatter.string(from: Date()).replacingOccurrences(of: ":", with: "-")).json"
+            let destination = downloadsURL.appendingPathComponent(filename)
+            try data.write(to: destination, options: .atomic)
+            NSWorkspace.shared.activateFileViewerSelecting([destination])
+            status = "错误报告已下载到 Downloads：\(filename)"
+        } catch {
+            status = "错误报告下载失败：\(error.localizedDescription)"
+        }
+    }
+
+    func clearRuntimeErrors() {
+        runtimeErrors.removeAll()
+        storage.save(runtimeErrors, key: "runtimeErrors")
+        status = "运行错误记录已清空"
+    }
+
+    func clearAllCacheWithConfirmation() {
+        let alert = NSAlert()
+        alert.messageText = "清空 OpenHub 缓存？"
+        alert.informativeText = """
+        将清空本机配置、收藏列表、下载记录、本地仓库列表缓存、分类缓存、搜索结果、GitHub App session id、GitHub access token，以及 Keychain 中的 GitHub App 登录信息。
+
+        不会删除已下载到磁盘的文件，也不会删除本地克隆仓库目录。
+        """
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "清空缓存")
+        alert.addButton(withTitle: "取消")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        clearAllCache()
+    }
+
+    private func clearAllCache() {
+        favorites = []
+        downloads = []
+        downloadJobs = []
+        runtimeErrors = []
+        sources = [
+            DownloadSource(id: "github-original", name: "GitHub 原始源", type: "origin", enabled: true, urlTemplate: "{originalUrl}", priority: 0),
+            DownloadSource(id: "custom-proxy", name: "自定义加速源", type: "proxy", enabled: false, urlTemplate: "https://example.com/{originalUrl}", priority: 50)
+        ]
+        selectedSourceID = "github-original"
+        appLanguage = .system
+        proxySettings = ProxySettings(enabled: false, server: "")
+        githubAppAccessToken = ""
+        githubSessionID = ""
+        githubUser = nil
+        userRepositories = []
+        starredRepositories = []
+        userRepositoriesPage = 1
+        starredRepositoriesPage = 1
+        canLoadMoreUserRepositories = true
+        canLoadMoreStarredRepositories = true
+        accountRepositoryQuery = ""
+        starredRepositoryQuery = ""
+        searchRepositories = []
+        query = ""
+        categoryRepositories = [.recommended: SampleData.repositories]
+        categoryPages = [:]
+        categoryCanLoadMore = Dictionary(uniqueKeysWithValues: AppCategory.allCases.map { ($0, true) })
+        localRepositories = []
+        selectedLocalRepository = nil
+        codeFiles = []
+        selectedCodeFile = nil
+        codeText = ""
+        gitStatusText = ""
+        gitDiffText = ""
+        gitSyncStateText = "未读取 Git 状态"
+        currentBranch = ""
+        workspacePath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("OpenHubRepos", isDirectory: true).path
+
+        storage.remove(keys: [
+            "favorites", "downloads", "runtimeErrors", "sources", "selectedSourceID", "appLanguage",
+            "workspacePath", "proxySettings", "token", "localRepositories"
+        ])
+        keychain.delete(account: "github-session-id")
+        keychain.delete(account: "github-app-access-token")
+        keychain.delete(account: "github-fallback-token")
+        keychain.delete(account: "github-token")
+        applyProxySettings()
+        status = "缓存已清空；下载文件和本地克隆仓库目录未删除"
+    }
+
+    private func captureRuntimeErrorIfNeeded(_ message: String, source: String) {
+        let lowercased = message.lowercased()
+        let markers = ["失败", "错误", "error", "failed", "exception", "无法", "未找到"]
+        guard markers.contains(where: { lowercased.contains($0.lowercased()) }) else { return }
+        if runtimeErrors.first?.message == message { return }
+        runtimeErrors.insert(RuntimeErrorRecord(id: UUID(), message: message, source: source, section: section.rawValue, createdAt: Date()), at: 0)
+        if runtimeErrors.count > 200 {
+            runtimeErrors.removeLast(runtimeErrors.count - 200)
+        }
+        storage.save(runtimeErrors, key: "runtimeErrors")
     }
 
     func applyProxySettings() {
@@ -1210,7 +1352,7 @@ final class AppStoreModel: ObservableObject {
         for preloadCategory in AppCategory.allCases {
             if categoryPages[preloadCategory, default: 0] > 0 { continue }
             do {
-                let result = try await client.discoverTop(category: preloadCategory, page: 1, token: token)
+                let result = try await client.discoverTop(category: preloadCategory, page: 1, token: activeGitHubToken)
                 let list = result.isEmpty ? fallbackRepositories(for: preloadCategory) : result
                 categoryRepositories[preloadCategory] = list
                 categoryPages[preloadCategory] = 1
@@ -1230,7 +1372,35 @@ final class AppStoreModel: ObservableObject {
 
     func startGitHubAppLogin() {
         status = "正在打开 GitHub 授权页面..."
-        NSWorkspace.shared.open(client.githubAppAuthorizationURL())
+        webAuthenticationSession?.cancel()
+        let session = ASWebAuthenticationSession(url: client.githubAppAuthorizationURL(), callbackURLScheme: "openhub") { [weak self] callbackURL, error in
+            Task { @MainActor in
+                guard let self else { return }
+                self.webAuthenticationSession = nil
+                if let callbackURL {
+                    self.handleOpenURL(callbackURL)
+                    return
+                }
+                if let error = error as? ASWebAuthenticationSessionError, error.code == .canceledLogin {
+                    self.status = "GitHub 登录已取消"
+                    return
+                }
+                if let error {
+                    self.status = "GitHub 登录失败：\(error.localizedDescription)"
+                }
+            }
+        }
+        session.presentationContextProvider = self
+        session.prefersEphemeralWebBrowserSession = false
+        webAuthenticationSession = session
+        if !session.start() {
+            status = "GitHub 登录窗口打开失败"
+            webAuthenticationSession = nil
+        }
+    }
+
+    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        NSApp.keyWindow ?? NSApp.windows.first ?? ASPresentationAnchor()
     }
 
     func handleOpenURL(_ url: URL) {
@@ -1252,14 +1422,6 @@ final class AppStoreModel: ObservableObject {
             await completeGitHubAppLogin(sessionID: githubSessionID, isRestoring: true)
             return
         }
-        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        do {
-            githubUser = try await client.currentUser(token: trimmed)
-            if section == .account { await refreshAccountData() }
-        } catch {
-            status = "已保存的 GitHub 登录已失效，请重新登录"
-        }
     }
 
     func completeGitHubAppLogin(sessionID: String, isRestoring: Bool = false) async {
@@ -1269,10 +1431,11 @@ final class AppStoreModel: ObservableObject {
         do {
             let session = try await client.githubAppSession(sessionID: sessionID)
             githubSessionID = session.sessionId
-            token = session.accessToken
+            githubAppAccessToken = session.accessToken
             githubUser = try await client.currentUser(token: session.accessToken)
             try keychain.save(session.sessionId, account: "github-session-id")
-            try keychain.save(session.accessToken, account: "github-token")
+            try keychain.save(session.accessToken, account: "github-app-access-token")
+            keychain.delete(account: "github-token")
             status = "已通过 GitHub App 登录：\(githubUser?.login ?? session.login)"
             await refreshAccountData()
             section = .account
@@ -1283,30 +1446,8 @@ final class AppStoreModel: ObservableObject {
         }
     }
 
-    func loginWithGitHubToken() async {
-        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            status = "请输入 GitHub Token 后登录"
-            return
-        }
-        isAccountLoading = true
-        status = "正在验证 GitHub 账号..."
-        defer { isAccountLoading = false }
-        do {
-            githubUser = try await client.currentUser(token: trimmed)
-            githubSessionID = ""
-            keychain.delete(account: "github-session-id")
-            try keychain.save(trimmed, account: "github-token")
-            status = "已登录 GitHub：\(githubUser?.login ?? "")"
-            await refreshAccountData()
-        } catch {
-            githubUser = nil
-            status = "GitHub 登录失败：\(error.localizedDescription)"
-        }
-    }
-
     func refreshAccountData() async {
-        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = activeGitHubToken
         guard !trimmed.isEmpty else { return }
         isAccountLoading = true
         defer { isAccountLoading = false }
@@ -1317,8 +1458,8 @@ final class AppStoreModel: ObservableObject {
             starredRepositories = try await starred
             userRepositoriesPage = 1
             starredRepositoriesPage = 1
-            canLoadMoreUserRepositories = userRepositories.count >= 10
-            canLoadMoreStarredRepositories = starredRepositories.count >= 10
+            canLoadMoreUserRepositories = userRepositories.count >= 20
+            canLoadMoreStarredRepositories = starredRepositories.count >= 20
             status = "个人中心已更新"
         } catch {
             status = "个人中心加载失败：\(error.localizedDescription)"
@@ -1336,7 +1477,7 @@ final class AppStoreModel: ObservableObject {
     private enum AccountRepositoryKind { case owned, starred }
 
     private func loadMoreAccountRepositories(kind: AccountRepositoryKind) async {
-        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = activeGitHubToken
         guard !trimmed.isEmpty, !isAccountLoading else { return }
         isAccountLoading = true
         defer { isAccountLoading = false }
@@ -1348,7 +1489,7 @@ final class AppStoreModel: ObservableObject {
                 let repos = try await client.userRepositories(token: trimmed, page: next)
                 appendUnique(repos, to: &userRepositories)
                 userRepositoriesPage = next
-                canLoadMoreUserRepositories = repos.count >= 10
+                canLoadMoreUserRepositories = repos.count >= 20
                 status = repos.isEmpty ? "没有更多自己的仓库" : "已加载更多自己的仓库"
             case .starred:
                 guard canLoadMoreStarredRepositories else { return }
@@ -1356,7 +1497,7 @@ final class AppStoreModel: ObservableObject {
                 let repos = try await client.starredRepositories(token: trimmed, page: next)
                 appendUnique(repos, to: &starredRepositories)
                 starredRepositoriesPage = next
-                canLoadMoreStarredRepositories = repos.count >= 10
+                canLoadMoreStarredRepositories = repos.count >= 20
                 status = repos.isEmpty ? "没有更多星标仓库" : "已加载更多星标仓库"
             }
         } catch {
@@ -1412,7 +1553,7 @@ final class AppStoreModel: ObservableObject {
     }
 
     func forkRepository(_ repository: Repository) async {
-        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = activeGitHubToken
         guard !trimmed.isEmpty else {
             status = "请先登录 GitHub，账号授权需要 repo 权限"
             return
@@ -1452,21 +1593,37 @@ final class AppStoreModel: ObservableObject {
         do {
             try cleanupStaleGitLock(in: directory)
             let remoteFullName = try await resolvedRemoteFullName(for: local)
-            syncProgress = 0.2
+            syncProgress = 0.16
+            syncMessage = "正在解析当前分支"
+            let branch = try await currentGitBranch(in: directory)
+            _ = try? await runGit(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], in: directory)
+
+            syncProgress = 0.26
             syncMessage = "正在暂存全部本地改动"
             _ = try await runGit(["add", "."], in: directory)
-            syncProgress = 0.45
-            syncMessage = "正在创建提交"
-            _ = try await runGit(["commit", "-m", commitMessage.isEmpty ? "Update from OpenHub" : commitMessage], in: directory, allowFailureContaining: "nothing to commit")
-            let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
-            syncProgress = 0.7
+
+            syncProgress = 0.38
+            let hasStagedChanges = await gitCommandSucceeds(["diff", "--cached", "--quiet"], in: directory) == false
+            if hasStagedChanges {
+                syncMessage = "正在创建提交"
+                _ = try await runGit(["commit", "-m", commitMessage.isEmpty ? "Update from OpenHub" : commitMessage], in: directory)
+            } else {
+                syncMessage = "没有新的文件改动，跳过提交"
+            }
+
+            syncProgress = 0.56
+            syncMessage = "正在拉取远端更新"
+            _ = try await runGit(["pull", "--rebase", "--autostash", "origin", branch], in: directory)
+
+            let trimmed = activeGitHubToken
+            syncProgress = 0.76
             syncMessage = "正在推送到 GitHub"
             if !trimmed.isEmpty {
                 let encodedToken = trimmed.addingPercentEncoding(withAllowedCharacters: .urlPasswordAllowed) ?? trimmed
                 let pushURL = "https://x-access-token:\(encodedToken)@github.com/\(remoteFullName).git"
-                _ = try await runGit(["push", pushURL, "HEAD"], in: directory)
+                _ = try await runGit(["push", pushURL, "HEAD:refs/heads/\(branch)"], in: directory)
             } else {
-                _ = try await runGit(["push"], in: directory)
+                _ = try await runGit(["push", "origin", "HEAD:refs/heads/\(branch)"], in: directory)
             }
             syncProgress = 0.9
             syncMessage = "正在刷新 Git 状态"
@@ -1545,6 +1702,7 @@ final class AppStoreModel: ObservableObject {
             codeText = ""
             gitStatusText = "未找到 Git 仓库，请选择包含 .git 的仓库目录或其上级工作区。"
             gitDiffText = ""
+            gitSyncStateText = "未找到 Git 仓库"
             currentBranch = ""
             status = "未找到可用本地 Git 仓库"
         }
@@ -1570,6 +1728,7 @@ final class AppStoreModel: ObservableObject {
             codeText = ""
             gitStatusText = "该路径不是 Git 仓库，请重新选择本地仓库路径。"
             gitDiffText = ""
+            gitSyncStateText = "本地仓库无效"
             currentBranch = ""
             status = "本地仓库无效：\(repository.path)"
             return
@@ -1633,11 +1792,16 @@ final class AppStoreModel: ObservableObject {
             return
         }
         do {
-            currentBranch = (try await runGit(["branch", "--show-current"], in: directory)).trimmingCharacters(in: .whitespacesAndNewlines)
-            gitStatusText = try await runGit(["status", "--short"], in: directory)
+            currentBranch = try await currentGitBranch(in: directory)
+            let branchStatus = try await runGit(["status", "--short", "--branch"], in: directory)
+            let shortStatus = try await runGit(["status", "--short"], in: directory)
+            let branchLine = branchStatus.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? ""
+            gitStatusText = shortStatus.isEmpty ? branchLine : branchStatus
             gitDiffText = try await runGit(["diff", "--stat"], in: directory)
+            gitSyncStateText = gitStateSummary(branchLine: branchLine, shortStatus: shortStatus)
         } catch {
             gitStatusText = "Git 状态读取失败：\(error.localizedDescription)"
+            gitSyncStateText = "Git 状态读取失败"
         }
     }
 
@@ -1688,6 +1852,38 @@ final class AppStoreModel: ObservableObject {
                 continuation.resume(throwing: error)
             }
         }
+    }
+
+    private func gitCommandSucceeds(_ arguments: [String], in directory: URL) async -> Bool {
+        do {
+            _ = try await runGit(arguments, in: directory)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private func currentGitBranch(in directory: URL) async throws -> String {
+        let branch = try await runGit(["branch", "--show-current"], in: directory).trimmingCharacters(in: .whitespacesAndNewlines)
+        if !branch.isEmpty { return branch }
+        let fallback = try await runGit(["rev-parse", "--abbrev-ref", "HEAD"], in: directory).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !fallback.isEmpty, fallback != "HEAD" else {
+            throw NSError(domain: "Git", code: 1, userInfo: [NSLocalizedDescriptionKey: "无法解析当前 Git 分支，请确认仓库不处于 detached HEAD 状态。"])
+        }
+        return fallback
+    }
+
+    private func gitStateSummary(branchLine: String, shortStatus: String) -> String {
+        if !shortStatus.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return "有未提交变更"
+        }
+        if branchLine.contains("ahead") {
+            return "有本地提交未推送"
+        }
+        if branchLine.contains("behind") {
+            return "本地落后远端"
+        }
+        return "工作区干净"
     }
 
     private func isGitRepository(_ directory: URL) -> Bool {
@@ -1752,6 +1948,12 @@ final class AppStoreModel: ObservableObject {
         if message.contains("index.lock") {
             return "Git 仓库存在锁文件，可能是上次同步中断导致。OpenHub 已会在下次同步前清理本地 stale lock，请稍后再试。"
         }
+        if message.contains("github.com") && message.contains("443") {
+            return "已提交到本地，但连接 github.com:443 失败，暂时没有推送到 GitHub。请检查网络或代理设置后重试。"
+        }
+        if message.contains("non-fast-forward") || message.contains("fetch first") {
+            return "远端有新的提交。新版同步会先 pull --rebase --autostash，再推送当前分支；请重试或手动处理 rebase 冲突。"
+        }
         return message
     }
 
@@ -1769,8 +1971,10 @@ final class AppStoreModel: ObservableObject {
         userRepositories = []
         starredRepositories = []
         githubSessionID = ""
-        token = ""
+        githubAppAccessToken = ""
         keychain.delete(account: "github-session-id")
+        keychain.delete(account: "github-app-access-token")
+        keychain.delete(account: "github-fallback-token")
         keychain.delete(account: "github-token")
         status = "已退出 GitHub 登录"
     }
@@ -1908,6 +2112,12 @@ struct LocalStorage {
     func load<T: Decodable>(_ type: T.Type, key: String) -> T? {
         guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
         return try? JSONDecoder().decode(T.self, from: data)
+    }
+
+    func remove(keys: [String]) {
+        for key in keys {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
     }
 }
 
@@ -2222,7 +2432,13 @@ struct RepositoryListView: View {
                         ForEach(repositories) { repository in
                             RepositoryRow(repository: repository)
                                 .contentShape(Rectangle())
-                                .onTapGesture { model.select(repository) }
+                                .onTapGesture {
+                                    if model.section == .collections {
+                                        NSWorkspace.shared.open(URL(string: repository.htmlURL)!)
+                                    } else {
+                                        model.select(repository)
+                                    }
+                                }
                                 .onAppear { model.loadMoreDiscoverIfNeeded(current: repository) }
                         }
                         if model.section == .catalog && model.canLoadMoreDiscover {
@@ -2670,7 +2886,15 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section("GitHub") {
-                SecureField(model.text("githubToken"), text: $model.token)
+                HStack {
+                    Text(model.isLoggedIn ? "已通过 GitHub App 登录" : "未登录")
+                    Spacer()
+                    Button {
+                        model.startGitHubAppLogin()
+                    } label: {
+                        Label(model.isLoggedIn ? "重新登录" : "使用 GitHub App 登录", systemImage: "person.crop.circle.badge.checkmark")
+                    }
+                }
                 Text(model.text("tokenKeychain"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -2723,6 +2947,36 @@ struct SettingsView: View {
                 Text("用于克隆自己的仓库、浏览本地代码、保存修改并执行 git push。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+
+            Section("运行错误") {
+                Text(model.runtimeErrors.isEmpty ? "暂无运行错误记录" : "已记录 \(model.runtimeErrors.count) 条运行错误")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                HStack {
+                    Button {
+                        model.exportRuntimeErrors()
+                    } label: {
+                        Label("下载错误报告", systemImage: "square.and.arrow.down")
+                    }
+                    Button(role: .destructive) {
+                        model.clearRuntimeErrors()
+                    } label: {
+                        Label("清空错误记录", systemImage: "trash")
+                    }
+                    .disabled(model.runtimeErrors.isEmpty)
+                }
+            }
+
+            Section("缓存") {
+                Text("清空本机配置、收藏列表、下载记录、本地仓库列表缓存、分类缓存、搜索结果、GitHub App session id、GitHub access token 和 Keychain 登录信息。不会删除已下载文件或本地克隆仓库目录。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button(role: .destructive) {
+                    model.clearAllCacheWithConfirmation()
+                } label: {
+                    Label("清空缓存", systemImage: "trash")
+                }
             }
 
             Button {
@@ -2785,55 +3039,59 @@ struct AccountView: View {
                         }
                     }
 
-                    HStack {
-                        Text("我的仓库")
-                            .font(.headline)
-                        Spacer()
-                        Button {
-                            model.chooseWorkspacePath()
-                        } label: {
-                            Label("本地路径", systemImage: "folder")
-                        }
-                        Button {
-                            Task { await model.refreshAccountData() }
-                        } label: {
-                            Label("刷新", systemImage: "arrow.clockwise")
-                        }
-                        .disabled(model.isAccountLoading)
-                    }
+                    Panel(title: "仓库", icon: "tablecells") {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack {
+                                Picker("仓库类型", selection: $model.accountRepositoryTab) {
+                                    ForEach(AccountRepositoryTab.allCases) { tab in
+                                        Text(tab.rawValue).tag(tab)
+                                    }
+                                }
+                                .pickerStyle(.segmented)
+                                .frame(width: 260)
 
-                    TextField("检索自己的仓库", text: $model.accountRepositoryQuery)
-                        .textFieldStyle(.roundedBorder)
+                                Spacer()
 
-                    RepositoryCompactList(repositories: model.filteredUserRepositories, emptyTitle: "暂无可展示仓库", showActions: true)
-                    if model.accountRepositoryQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, model.canLoadMoreUserRepositories {
-                        HStack {
-                            Spacer()
-                            Button {
-                                Task { await model.loadMoreUserRepositories() }
-                            } label: {
-                                Label("加载更多仓库", systemImage: "arrow.down.circle")
+                                Button {
+                                    model.chooseWorkspacePath()
+                                } label: {
+                                    Label("本地路径", systemImage: "folder")
+                                }
+                                Button {
+                                    Task { await model.refreshAccountData() }
+                                } label: {
+                                    Label("刷新", systemImage: "arrow.clockwise")
+                                }
+                                .disabled(model.isAccountLoading)
                             }
-                            .disabled(model.isAccountLoading)
-                            Spacer()
-                        }
-                    }
 
-                    Text("星标仓库")
-                        .font(.headline)
-                    TextField("检索星标仓库", text: $model.starredRepositoryQuery)
-                        .textFieldStyle(.roundedBorder)
-                    RepositoryCompactList(repositories: model.filteredStarredRepositories, emptyTitle: "暂无星标仓库", showActions: false)
-                    if model.starredRepositoryQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, model.canLoadMoreStarredRepositories {
-                        HStack {
-                            Spacer()
-                            Button {
-                                Task { await model.loadMoreStarredRepositories() }
-                            } label: {
-                                Label("加载更多星标", systemImage: "arrow.down.circle")
+                            if model.accountRepositoryTab == .owned {
+                                TextField("检索自己的仓库", text: $model.accountRepositoryQuery)
+                                    .textFieldStyle(.roundedBorder)
+                                RepositoryTable(
+                                    repositories: model.filteredUserRepositories,
+                                    emptyTitle: "暂无可展示仓库",
+                                    showClone: true,
+                                    canLoadMore: model.accountRepositoryQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && model.canLoadMoreUserRepositories,
+                                    loadingTitle: "继续加载自己的仓库，每次 20 个..."
+                                ) {
+                                    Task { await model.loadMoreUserRepositories() }
+                                }
+                                    .frame(height: 420)
+                            } else {
+                                TextField("检索星标仓库", text: $model.starredRepositoryQuery)
+                                    .textFieldStyle(.roundedBorder)
+                                RepositoryTable(
+                                    repositories: model.filteredStarredRepositories,
+                                    emptyTitle: "暂无星标仓库",
+                                    showClone: false,
+                                    canLoadMore: model.starredRepositoryQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && model.canLoadMoreStarredRepositories,
+                                    loadingTitle: "继续加载星标仓库，每次 20 个..."
+                                ) {
+                                    Task { await model.loadMoreStarredRepositories() }
+                                }
+                                    .frame(height: 420)
                             }
-                            .disabled(model.isAccountLoading)
-                            Spacer()
                         }
                     }
                 } else {
@@ -2849,27 +3107,9 @@ struct AccountView: View {
                             .controlSize(.large)
                             .disabled(model.isAccountLoading)
 
-                            Divider()
-
-                            Text("备用 Token 登录")
-                                .font(.headline)
-                            SecureField("GitHub Personal Access Token", text: $model.token)
-                                .textFieldStyle(.roundedBorder)
-                            Text("GitHub App 登录不可用时，可临时使用 Token 登录。Token 会保存在 macOS Keychain。")
+                            Text("登录会在当前 app 内打开 GitHub 授权窗口，授权完成后自动回到 OpenHub。")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                            HStack {
-                                Button {
-                                    Task { await model.loginWithGitHubToken() }
-                                } label: {
-                                    Label("使用 Token 登录", systemImage: "key")
-                                }
-                                .disabled(model.isAccountLoading)
-
-                                Button("创建 Token") {
-                                    NSWorkspace.shared.open(URL(string: "https://github.com/settings/tokens")!)
-                                }
-                            }
                         }
                     }
                 }
@@ -2879,11 +3119,14 @@ struct AccountView: View {
     }
 }
 
-struct RepositoryCompactList: View {
+struct RepositoryTable: View {
     @EnvironmentObject private var model: AppStoreModel
     let repositories: [Repository]
     let emptyTitle: String
-    var showActions = false
+    var showClone = false
+    var canLoadMore = false
+    var loadingTitle = "继续加载..."
+    var onLoadMore: (() -> Void)?
 
     var body: some View {
         if repositories.isEmpty {
@@ -2898,42 +3141,94 @@ struct RepositoryCompactList: View {
             .background(Color(nsColor: .controlBackgroundColor))
             .clipShape(RoundedRectangle(cornerRadius: 10))
         } else {
-            VStack(spacing: 8) {
-                ForEach(repositories) { repository in
-                    HStack(spacing: 10) {
-                        ProjectIconView(repository: repository, size: 36)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(repository.fullName)
-                                .font(.subheadline.weight(.semibold))
-                            Text(repository.description)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
+            VStack(spacing: 0) {
+                HStack(spacing: 12) {
+                    Text("仓库")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text("语言")
+                        .frame(width: 86, alignment: .leading)
+                    Text("Stars")
+                        .frame(width: 74, alignment: .trailing)
+                    Text("操作")
+                        .frame(width: showClone ? 132 : 70, alignment: .center)
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color(nsColor: .controlBackgroundColor))
+
+                Divider()
+
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(repositories) { repository in
+                            HStack(spacing: 12) {
+                                ProjectIconView(repository: repository, size: 34)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(repository.fullName)
+                                        .font(.subheadline.weight(.semibold))
+                                        .lineLimit(1)
+                                    Text(repository.description)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+
+                                Text(repository.language.isEmpty ? "-" : repository.language)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 86, alignment: .leading)
+
+                                Label(shortNumber(repository.stars), systemImage: "star.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 74, alignment: .trailing)
+
+                                HStack(spacing: 8) {
+                                    Button("打开") {
+                                        NSWorkspace.shared.open(URL(string: repository.htmlURL)!)
+                                    }
+                                    .frame(width: 54)
+                                    if showClone {
+                                        Button("克隆") {
+                                            Task { await model.cloneRepository(repository) }
+                                        }
+                                        .frame(width: 54)
+                                    }
+                                }
+                                .frame(width: showClone ? 132 : 70, alignment: .center)
+                            }
+                            .padding(10)
+                            .onAppear {
+                                guard canLoadMore, !model.isAccountLoading, repository.fullName == repositories.last?.fullName else { return }
+                                onLoadMore?()
+                            }
+                            Divider()
                         }
-                        Spacer()
-                        Label(shortNumber(repository.stars), systemImage: "star.fill")
+
+                        if canLoadMore {
+                            HStack(spacing: 8) {
+                                if model.isAccountLoading {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                } else {
+                                    Image(systemName: "arrow.down.circle")
+                                }
+                                Text(model.isAccountLoading ? loadingTitle : "向下滚动加载更多")
+                            }
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                            .frame(width: 72, alignment: .trailing)
-                        HStack(spacing: 8) {
-                            Button("打开") {
-                                NSWorkspace.shared.open(URL(string: repository.htmlURL)!)
-                            }
-                            .frame(width: 52)
-                            if showActions {
-                            Button("克隆") {
-                                Task { await model.cloneRepository(repository) }
-                            }
-                            .frame(width: 52)
-                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(12)
                         }
-                        .frame(width: showActions ? 116 : 56, alignment: .center)
                     }
-                    .padding(10)
-                    .background(Color(nsColor: .controlBackgroundColor))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
             }
+            .background(Color(nsColor: .windowBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.black.opacity(0.08)))
         }
     }
 }
@@ -3081,12 +3376,12 @@ struct GitBottomPanel: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                Text(model.gitStatusText.isEmpty ? "工作区干净" : "有未提交变更")
+                Text(model.gitSyncStateText)
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(model.gitStatusText.isEmpty ? .green : .orange)
+                    .foregroundStyle(model.gitSyncStateText == "工作区干净" ? .green : .orange)
             }
             HStack(alignment: .top, spacing: 12) {
-                GitInfoCard(title: "变更", text: model.gitStatusText.isEmpty ? "暂无未提交变更" : model.gitStatusText, color: .blue)
+                GitInfoCard(title: "状态", text: model.gitStatusText.isEmpty ? "暂无未提交变更" : model.gitStatusText, color: .blue)
                 GitInfoCard(title: "Diff", text: model.gitDiffText.isEmpty ? "暂无 diff" : model.gitDiffText, color: .purple)
                 VStack(alignment: .leading, spacing: 8) {
                     Text("提交")

@@ -38,19 +38,29 @@ const l10n = {
     recommendedSubtitle: "GitHub 热门前 100，滚动浏览",
     searchSubtitle: "按仓库名精确度、stars 和更新时间排序",
     searchPlaceholder: "输入仓库名可精确排序，例如 iina、rectangle、utm",
-    submitProject: "提交项目",
+    submitProject: "创建项目",
     repositoryDocs: "仓库文档",
     downloadAssets: "下载资源",
     trustInfo: "信任信息",
     releaseInfo: "版本信息",
     language: "语言",
     interfaceLanguage: "界面语言",
-    githubToken: "Personal Access Token，可选",
-    tokenNote: "Token 保存在当前 Windows 用户的 Tauri WebView 本地存储中。",
+    githubToken: "GitHub App 登录",
+    tokenNote: "OpenHub 仅使用 GitHub App 登录；session id 和访问令牌保存在当前 Windows 用户的 Tauri WebView 本地存储中。",
     downloadSource: "下载源",
     defaultDownloadSource: "默认下载源",
     saveSettings: "保存设置",
     openGitHub: "打开 GitHub",
+    starOnGitHub: "同步 Star",
+    unstarOnGitHub: "取消 Star",
+    runtimeErrors: "运行错误",
+    downloadErrors: "下载错误报告",
+    clearErrors: "清空错误",
+    clearCache: "清空缓存",
+    cacheNote: "清空本机配置、收藏、下载记录、仓库列表缓存、分类缓存、搜索结果和 GitHub App 登录信息；不会删除磁盘下载文件或本地克隆仓库。",
+    accountTable: "仓库",
+    loadMore: "滚动加载更多，每次 20 个",
+    noRuntimeErrors: "暂无运行错误",
     noRelease: "暂无 Release 信息",
     emptyFavorites: "还没有收藏项目",
     emptyDownloads: "还没有下载记录",
@@ -59,7 +69,7 @@ const l10n = {
     signOut: "退出登录",
     myRepos: "我的仓库",
     starredRepos: "星标仓库",
-    createToken: "创建 Token",
+    loginHint: "登录会在当前 OpenHub 窗口中打开 GitHub 授权流程，授权完成后自动返回。",
     statusReady: "准备就绪",
     loading: "正在加载 GitHub 项目...",
     preloadDone: "分类内容预加载完成",
@@ -103,19 +113,29 @@ const l10n = {
     recommendedSubtitle: "GitHub Top 100, scroll to browse",
     searchSubtitle: "Ranked by repository-name match, stars, and update time",
     searchPlaceholder: "Type a repository name, e.g. iina, rectangle, utm",
-    submitProject: "Submit",
+    submitProject: "Create Project",
     repositoryDocs: "Repository Docs",
     downloadAssets: "Downloads",
     trustInfo: "Trust",
     releaseInfo: "Release",
     language: "Language",
     interfaceLanguage: "Interface Language",
-    githubToken: "Personal Access Token, optional",
-    tokenNote: "Token is stored in the local Tauri WebView storage for the current Windows user.",
+    githubToken: "GitHub App Sign In",
+    tokenNote: "OpenHub only uses GitHub App sign-in. The session id and access token are stored in the local Tauri WebView storage for the current Windows user.",
     downloadSource: "Download Source",
     defaultDownloadSource: "Default Source",
     saveSettings: "Save Settings",
     openGitHub: "Open GitHub",
+    starOnGitHub: "Sync Star",
+    unstarOnGitHub: "Unstar",
+    runtimeErrors: "Runtime Errors",
+    downloadErrors: "Download Error Report",
+    clearErrors: "Clear Errors",
+    clearCache: "Clear Cache",
+    cacheNote: "Clears local settings, favorites, downloads, repository list caches, category cache, search results, and GitHub App sign-in data. Downloaded files and local clones are not deleted.",
+    accountTable: "Repositories",
+    loadMore: "Scroll to load 20 more",
+    noRuntimeErrors: "No runtime errors",
     noRelease: "No release information",
     emptyFavorites: "No favorites yet",
     emptyDownloads: "No downloads yet",
@@ -124,7 +144,7 @@ const l10n = {
     signOut: "Sign Out",
     myRepos: "My Repositories",
     starredRepos: "Starred Repositories",
-    createToken: "Create Token",
+    loginHint: "Sign-in opens GitHub authorization in the current OpenHub window and returns automatically.",
     statusReady: "Ready",
     loading: "Loading GitHub projects...",
     preloadDone: "Category preload complete",
@@ -162,20 +182,29 @@ const sampleRepos = [
   repoFromSample("rxhanson/Rectangle", "Rectangle", "Move and resize windows in macOS.", "Swift", "MIT", 26800, "productivity")
 ];
 
+const authBackendBaseURL = "https://openhub.moomer.ccwu.cc";
+
 const state = {
   view: "catalog",
   category: "recommended",
   language: localStorage.getItem("openhub.language") || "system",
-  token: localStorage.getItem("openhub.token") || "",
+  githubSessionId: localStorage.getItem("openhub.githubSessionId") || "",
+  githubAccessToken: localStorage.getItem("openhub.githubAccessToken") || "",
   selectedSource: localStorage.getItem("openhub.source") || "github",
   reposByCategory: new Map([["recommended", sampleRepos]]),
   pagesByCategory: new Map(),
   canLoadMore: new Map(categories.map((item) => [item.id, true])),
   favorites: loadJson("openhub.favorites", []),
   downloads: loadJson("openhub.downloads", []),
+  runtimeErrors: loadJson("openhub.runtimeErrors", []),
   user: loadJson("openhub.user", null),
   userRepos: [],
   starredRepos: [],
+  userReposPage: 0,
+  starredReposPage: 0,
+  canLoadMoreUserRepos: true,
+  canLoadMoreStarredRepos: true,
+  accountTab: localStorage.getItem("openhub.accountTab") || "owned",
   searchResults: [],
   query: "",
   selected: sampleRepos[0],
@@ -219,6 +248,9 @@ function categoryName(id) {
 
 function setStatus(message) {
   el.status.textContent = message;
+  if (/失败|错误|error|failed|exception|HTTP/i.test(String(message))) {
+    recordRuntimeError(message, "status");
+  }
 }
 
 function authHeaders() {
@@ -226,7 +258,7 @@ function authHeaders() {
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28"
   };
-  if (state.token.trim()) headers.Authorization = `Bearer ${state.token.trim()}`;
+  if (state.githubAccessToken.trim()) headers.Authorization = `Bearer ${state.githubAccessToken.trim()}`;
   return headers;
 }
 
@@ -235,9 +267,49 @@ async function github(url, options = {}) {
     ...options,
     headers: { ...authHeaders(), ...(options.headers || {}) }
   });
-  if (!response.ok && response.status !== 204) throw new Error(`GitHub HTTP ${response.status}`);
+  if (!response.ok && response.status !== 204) throw new Error(`GitHub HTTP ${response.status}: ${url}`);
   if (response.status === 204) return null;
   return response.json();
+}
+
+function recordRuntimeError(message, source = "runtime") {
+  const text = String(message?.message || message || "Unknown error");
+  const last = state.runtimeErrors[0];
+  if (last && last.message === text && Date.now() - new Date(last.time).getTime() < 1000) return;
+  state.runtimeErrors.unshift({
+    time: new Date().toISOString(),
+    source,
+    view: state.view,
+    message: text
+  });
+  state.runtimeErrors = state.runtimeErrors.slice(0, 200);
+  saveJson("openhub.runtimeErrors", state.runtimeErrors);
+}
+
+function downloadRuntimeErrors() {
+  const payload = {
+    app: "OpenHub Windows",
+    exportedAt: new Date().toISOString(),
+    userAgent: navigator.userAgent,
+    view: state.view,
+    selectedRepository: state.selected?.fullName || null,
+    errors: state.runtimeErrors
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `openhub-runtime-errors-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function clearRuntimeErrors() {
+  state.runtimeErrors = [];
+  saveJson("openhub.runtimeErrors", state.runtimeErrors);
+  render();
 }
 
 function cleanText(value, limit = 260) {
@@ -349,6 +421,7 @@ async function loadCategory(categoryId, force = false) {
     }
     setStatus(`${merged.length}/100`);
   } catch (error) {
+    recordRuntimeError(error, "load-category");
     if (!state.reposByCategory.get(categoryId)?.length) state.reposByCategory.set(categoryId, sampleRepos);
     state.canLoadMore.set(categoryId, false);
     setStatus(error.message);
@@ -366,7 +439,8 @@ async function preloadCategories() {
       state.reposByCategory.set(category.id, repos.length ? repos : sampleRepos);
       state.pagesByCategory.set(category.id, 1);
       state.canLoadMore.set(category.id, repos.length > 0);
-    } catch {
+    } catch (error) {
+      recordRuntimeError(error, "preload-category");
       if (!state.reposByCategory.get(category.id)?.length) state.reposByCategory.set(category.id, sampleRepos);
       state.canLoadMore.set(category.id, false);
     }
@@ -393,6 +467,7 @@ async function performSearch() {
     if (state.selected) loadRelease(state.selected);
     setStatus(`${state.searchResults.length}`);
   } catch (error) {
+    recordRuntimeError(error, "search");
     setStatus(error.message);
   } finally {
     state.loading = false;
@@ -422,7 +497,8 @@ async function loadRelease(repo) {
   try {
     const release = await github(`https://api.github.com/repos/${repo.owner}/${repo.name}/releases/latest`);
     state.latestRelease = release;
-  } catch {
+  } catch (error) {
+    recordRuntimeError(error, "release");
     state.latestRelease = null;
   }
   renderDetail();
@@ -436,30 +512,97 @@ async function toggleFavorite(repo) {
   saveJson("openhub.favorites", state.favorites);
   render();
 
-  if (!state.token.trim()) return;
+  if (!state.githubAccessToken.trim()) return;
   try {
     await github(`https://api.github.com/user/starred/${repo.owner}/${repo.name}`, {
       method: exists ? "DELETE" : "PUT"
     });
     setStatus(exists ? "Unstarred on GitHub" : "Starred on GitHub");
   } catch (error) {
+    recordRuntimeError(error, "star");
     setStatus(`GitHub Star failed: ${error.message}`);
   }
 }
 
-async function login() {
-  state.token = document.querySelector("#tokenInput")?.value.trim() || state.token;
-  if (!state.token) return;
+function startGitHubAppLogin() {
+  const returnURL = new URL(window.location.href);
+  returnURL.search = "";
+  returnURL.hash = "";
+  const authURL = new URL(`${authBackendBaseURL}/auth/github/start`);
+  authURL.searchParams.set("redirect_uri", returnURL.toString());
+  setStatus("正在打开 GitHub App 授权...");
+  window.location.href = authURL.toString();
+}
+
+async function completeGitHubAppLogin(sessionId) {
+  if (!sessionId) return;
   try {
+    const session = await fetchJson(`${authBackendBaseURL}/auth/session?session_id=${encodeURIComponent(sessionId)}`);
+    state.githubSessionId = session.sessionId;
+    state.githubAccessToken = session.accessToken;
+    localStorage.setItem("openhub.githubSessionId", state.githubSessionId);
+    localStorage.setItem("openhub.githubAccessToken", state.githubAccessToken);
     state.user = await github("https://api.github.com/user");
-    state.userRepos = (await github("https://api.github.com/user/repos?sort=updated&per_page=30")).map(normalizeRepo);
-    state.starredRepos = (await github("https://api.github.com/user/starred?sort=updated&per_page=30")).map(normalizeRepo);
-    localStorage.setItem("openhub.token", state.token);
+    await refreshAccountData();
     saveJson("openhub.user", state.user);
     state.view = "account";
+    setStatus(`GitHub App 登录成功：${state.user.login}`);
+    const cleanURL = new URL(window.location.href);
+    cleanURL.searchParams.delete("session_id");
+    cleanURL.searchParams.delete("login");
+    cleanURL.searchParams.delete("error");
+    history.replaceState(null, "", cleanURL.toString());
     render();
   } catch (error) {
+    recordRuntimeError(error, "login");
+    setStatus(`GitHub App 登录失败：${error.message}`);
+  }
+}
+
+async function fetchJson(url, options = {}) {
+  const response = await fetch(url, options);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.message || data.error || `HTTP ${response.status}`);
+  return data;
+}
+
+async function refreshAccountData() {
+  if (!state.githubAccessToken.trim()) return;
+  state.userReposPage = 1;
+  state.starredReposPage = 1;
+  state.userRepos = (await github("https://api.github.com/user/repos?sort=updated&per_page=20&page=1")).map(normalizeRepo);
+  state.starredRepos = (await github("https://api.github.com/user/starred?sort=updated&per_page=20&page=1")).map(normalizeRepo);
+  state.canLoadMoreUserRepos = state.userRepos.length >= 20;
+  state.canLoadMoreStarredRepos = state.starredRepos.length >= 20;
+}
+
+async function loadMoreAccountRepos(kind) {
+  if (!state.githubAccessToken.trim() || state.loading) return;
+  const isStarred = kind === "starred";
+  const nextPage = (isStarred ? state.starredReposPage : state.userReposPage) + 1;
+  const url = isStarred
+    ? `https://api.github.com/user/starred?sort=updated&per_page=20&page=${nextPage}`
+    : `https://api.github.com/user/repos?sort=updated&per_page=20&page=${nextPage}`;
+  try {
+    state.loading = true;
+    render();
+    const repos = (await github(url)).map(normalizeRepo);
+    if (isStarred) {
+      state.starredRepos = dedupe([...state.starredRepos, ...repos]);
+      state.starredReposPage = nextPage;
+      state.canLoadMoreStarredRepos = repos.length >= 20;
+    } else {
+      state.userRepos = dedupe([...state.userRepos, ...repos]);
+      state.userReposPage = nextPage;
+      state.canLoadMoreUserRepos = repos.length >= 20;
+    }
+    render();
+  } catch (error) {
+    recordRuntimeError(error, "account-load-more");
     setStatus(error.message);
+  } finally {
+    state.loading = false;
+    render();
   }
 }
 
@@ -467,9 +610,50 @@ function signOut() {
   state.user = null;
   state.userRepos = [];
   state.starredRepos = [];
-  state.token = "";
-  localStorage.removeItem("openhub.token");
+  if (state.githubSessionId) {
+    fetch(`${authBackendBaseURL}/auth/logout`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${state.githubSessionId}` }
+    }).catch((error) => recordRuntimeError(error, "logout"));
+  }
+  state.githubSessionId = "";
+  state.githubAccessToken = "";
+  localStorage.removeItem("openhub.githubSessionId");
+  localStorage.removeItem("openhub.githubAccessToken");
   localStorage.removeItem("openhub.user");
+  render();
+}
+
+function clearAllCache() {
+  if (!confirm(`${t("clearCache")}?\n\n${t("cacheNote")}`)) return;
+  for (const key of Object.keys(localStorage)) {
+    if (key.startsWith("openhub.")) localStorage.removeItem(key);
+  }
+  state.view = "settings";
+  state.category = "recommended";
+  state.language = "system";
+  state.githubSessionId = "";
+  state.githubAccessToken = "";
+  state.selectedSource = "github";
+  state.reposByCategory = new Map([["recommended", sampleRepos]]);
+  state.pagesByCategory = new Map();
+  state.canLoadMore = new Map(categories.map((item) => [item.id, true]));
+  state.favorites = [];
+  state.downloads = [];
+  state.runtimeErrors = [];
+  state.user = null;
+  state.userRepos = [];
+  state.starredRepos = [];
+  state.searchResults = [];
+  state.query = "";
+  state.selected = sampleRepos[0];
+  state.latestRelease = null;
+  state.userReposPage = 0;
+  state.starredReposPage = 0;
+  state.canLoadMoreUserRepos = true;
+  state.canLoadMoreStarredRepos = true;
+  state.accountTab = "owned";
+  setStatus("缓存已清空");
   render();
 }
 
@@ -649,7 +833,8 @@ function renderUtilityView() {
       <div class="settings-form">
         <section class="panel">
           <h3>GitHub</h3>
-          <label class="field">${t("githubToken")}<input id="tokenInput" type="password" value="${escapeHtml(state.token)}" /></label>
+          <p class="muted">${state.user ? `${t("accountCenter")}: @${escapeHtml(state.user.login)}` : t("loginHint")}</p>
+          <button id="githubAppLoginButton" class="primary">${state.user ? t("loginGitHub") : t("loginGitHub")}</button>
           <p class="muted">${t("tokenNote")}</p>
         </section>
         <section class="panel">
@@ -666,6 +851,17 @@ function renderUtilityView() {
           <h3>${t("downloadSource")}</h3>
           <label class="field">${t("defaultDownloadSource")}<select id="settingsSourceSelect">${sources.map((source) => `<option value="${source.id}">${escapeHtml(source.name)}</option>`).join("")}</select></label>
         </section>
+        <section class="panel">
+          <h3>${t("runtimeErrors")}</h3>
+          <p class="muted">${state.runtimeErrors.length ? `${state.runtimeErrors.length} errors recorded` : t("noRuntimeErrors")}</p>
+          <button id="downloadErrorsButton">${t("downloadErrors")}</button>
+          <button id="clearErrorsButton">${t("clearErrors")}</button>
+        </section>
+        <section class="panel">
+          <h3>${t("clearCache")}</h3>
+          <p class="muted">${t("cacheNote")}</p>
+          <button id="clearCacheButton">${t("clearCache")}</button>
+        </section>
         <button id="saveSettingsButton" class="primary">${t("saveSettings")}</button>
       </div>
     `;
@@ -676,9 +872,8 @@ function renderUtilityView() {
         <div class="account-form">
           <section class="panel">
             <h3>${t("loginGitHub")}</h3>
-            <label class="field">GitHub Personal Access Token<input id="tokenInput" type="password" value="${escapeHtml(state.token)}" /></label>
-            <button id="loginButton" class="primary">${t("loginGitHub")}</button>
-            <button id="createTokenButton">${t("createToken")}</button>
+            <p class="muted">${t("loginHint")}</p>
+            <button id="githubAppLoginButton" class="primary">${t("loginGitHub")}</button>
           </section>
         </div>
       `;
@@ -690,8 +885,17 @@ function renderUtilityView() {
         <button data-open="${escapeHtml(state.user.html_url)}">${t("openGitHub")}</button>
         <button id="signOutButton">${t("signOut")}</button>
       </section>
-      <section class="panel"><h3>${t("myRepos")}</h3>${compactRepos(state.userRepos)}</section>
-      <section class="panel"><h3>${t("starredRepos")}</h3>${compactRepos(state.starredRepos)}</section>
+      <section class="panel">
+        <div class="account-panel-head">
+          <h3>${t("accountTable")}</h3>
+          <div class="segmented">
+            <button class="${state.accountTab === "owned" ? "active" : ""}" data-account-tab="owned">${t("myRepos")}</button>
+            <button class="${state.accountTab === "starred" ? "active" : ""}" data-account-tab="starred">${t("starredRepos")}</button>
+          </div>
+        </div>
+        ${accountTable(state.accountTab === "starred" ? state.starredRepos : state.userRepos, state.accountTab)}
+        ${accountLoadMoreHint()}
+      </section>
     `;
   }
   if (state.view === "downloads") {
@@ -703,9 +907,27 @@ function renderUtilityView() {
   return "";
 }
 
-function compactRepos(repos) {
+function accountTable(repos, kind) {
   if (!repos.length) return `<p class="muted">Empty</p>`;
-  return repos.slice(0, 12).map((repo) => `<div class="account-row"><div><strong>${escapeHtml(repo.fullName)}</strong><p class="muted">${escapeHtml(repo.description)}</p></div><span>★ ${shortNumber(repo.stars)}</span></div>`).join("");
+  return `
+    <div class="repo-table">
+      <div class="repo-table-row repo-table-head"><span>Repository</span><span>Language</span><span>Stars</span><span>Action</span></div>
+      ${repos.map((repo) => `
+        <div class="repo-table-row">
+          <span><strong>${escapeHtml(repo.fullName)}</strong><small>${escapeHtml(repo.description)}</small></span>
+          <span>${escapeHtml(repo.language || "-")}</span>
+          <span>★ ${shortNumber(repo.stars)}</span>
+          <span class="table-actions"><button data-open="${escapeHtml(repo.htmlUrl)}">${t("openGitHub")}</button></span>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function accountLoadMoreHint() {
+  const canLoad = state.accountTab === "starred" ? state.canLoadMoreStarredRepos : state.canLoadMoreUserRepos;
+  if (!canLoad) return "";
+  return `<div class="load-more-account" data-account-load-sentinel="${state.accountTab}">${state.loading ? t("loading") : t("loadMore")}</div>`;
 }
 
 function renderLoading() {
@@ -755,6 +977,19 @@ function formatBytes(value = 0) {
 }
 
 document.addEventListener("click", async (event) => {
+  const openButton = event.target.closest("[data-open]");
+  if (openButton) {
+    openUrl(openButton.dataset.open);
+    return;
+  }
+
+  const favButton = event.target.closest("[data-favorite]");
+  if (favButton) {
+    const repo = currentRepos().find((item) => item.fullName === favButton.dataset.favorite) || state.selected;
+    if (repo) await toggleFavorite(repo);
+    return;
+  }
+
   const categoryButton = event.target.closest("[data-category]");
   if (categoryButton) {
     state.view = "catalog";
@@ -777,18 +1012,16 @@ document.addEventListener("click", async (event) => {
   if (repoCardNode) {
     const repo = currentRepos().find((item) => item.fullName === repoCardNode.dataset.repo);
     if (repo) {
+      if (state.view === "favorites") {
+        openUrl(repo.htmlUrl);
+        return;
+      }
       state.selected = repo;
       render();
       loadRelease(repo);
     }
     return;
   }
-
-  const openButton = event.target.closest("[data-open]");
-  if (openButton) openUrl(openButton.dataset.open);
-
-  const favButton = event.target.closest("[data-favorite]");
-  if (favButton && state.selected) toggleFavorite(state.selected);
 
   const downloadButton = event.target.closest("[data-download]");
   if (downloadButton && state.latestRelease && state.selected) {
@@ -797,14 +1030,21 @@ document.addEventListener("click", async (event) => {
   }
 
   if (event.target.id === "loadMoreButton") loadCategory(state.category);
-  if (event.target.id === "loginButton") login();
+  if (event.target.id === "githubAppLoginButton") startGitHubAppLogin();
   if (event.target.id === "signOutButton") signOut();
-  if (event.target.id === "createTokenButton") openUrl("https://github.com/settings/tokens");
+  if (event.target.id === "downloadErrorsButton") downloadRuntimeErrors();
+  if (event.target.id === "clearErrorsButton") clearRuntimeErrors();
+  if (event.target.id === "clearCacheButton") clearAllCache();
+  const accountTabButton = event.target.closest("[data-account-tab]");
+  if (accountTabButton) {
+    state.accountTab = accountTabButton.dataset.accountTab;
+    localStorage.setItem("openhub.accountTab", state.accountTab);
+    render();
+    return;
+  }
   if (event.target.id === "saveSettingsButton") {
-    state.token = document.querySelector("#tokenInput")?.value.trim() || "";
     state.language = document.querySelector("#languageSelect")?.value || state.language;
     state.selectedSource = document.querySelector("#settingsSourceSelect")?.value || state.selectedSource;
-    localStorage.setItem("openhub.token", state.token);
     localStorage.setItem("openhub.language", state.language);
     localStorage.setItem("openhub.source", state.selectedSource);
     setStatus(t("saveSettings"));
@@ -826,8 +1066,32 @@ el.repoList.addEventListener("scroll", () => {
   if (state.view === "catalog" && nearBottom && state.canLoadMore.get(state.category) && !state.loading) {
     loadCategory(state.category);
   }
+  if (state.view === "account" && state.user && nearBottom && !state.loading) {
+    const canLoad = state.accountTab === "starred" ? state.canLoadMoreStarredRepos : state.canLoadMoreUserRepos;
+    if (canLoad) loadMoreAccountRepos(state.accountTab);
+  }
 });
+
+async function restoreGitHubAppLogin() {
+  const params = new URLSearchParams(window.location.search);
+  const sessionId = params.get("session_id") || state.githubSessionId;
+  const error = params.get("error");
+  if (error) {
+    setStatus(`GitHub App 登录失败：${error}`);
+    return;
+  }
+  if (!sessionId) return;
+  await completeGitHubAppLogin(sessionId);
+}
 
 render();
 setStatus(t("statusReady"));
-loadCategory("recommended").then(preloadCategories);
+restoreGitHubAppLogin().finally(() => loadCategory("recommended").then(preloadCategories));
+
+window.addEventListener("error", (event) => {
+  recordRuntimeError(`${event.message} at ${event.filename}:${event.lineno}:${event.colno}`, "window-error");
+});
+
+window.addEventListener("unhandledrejection", (event) => {
+  recordRuntimeError(event.reason || "Unhandled promise rejection", "unhandled-rejection");
+});

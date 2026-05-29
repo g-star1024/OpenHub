@@ -39,5 +39,11 @@ windows/openhub-tauri/src-tauri/target/release/bundle/
 
 ## Notes
 
-- The Windows version shares the same product behavior: GitHub discovery, category browsing, search, favorites, language switching, and GitHub Star sync through a personal token.
-- The current Windows client stores settings in browser local storage inside the Tauri WebView. A future iteration should migrate the token to a Tauri secure storage plugin.
+- The Windows version shares the same product behavior: GitHub discovery, category browsing, search, favorites, language switching, GitHub App sign-in, and GitHub Star sync through the App session token.
+- Category/search repository cards are selection-only and do not show inline open-link or Star buttons. Favorite cards open GitHub directly when clicked.
+- Account center uses a table switch between My Repositories and Starred Repositories, with 20 items initially and 20 more loaded when the list scrolls to the bottom.
+- Settings includes Clear Cache with confirmation. It clears WebView local settings, favorites, downloads, repository caches, category/search caches, and GitHub App sign-in data without deleting downloaded files or local clone directories.
+- Settings can export a JSON runtime error report collected from status errors, window errors, and unhandled promise rejections.
+- `src-tauri/tauri.conf.json` keeps `icons/icon.ico` in the bundle icon list for NSIS / MSI shortcuts, and Rust startup sets the runtime window icon from `icons/icon.png`.
+- Release builds use `windows_subsystem = "windows"` to avoid a console window, and NSIS uses current-user install mode to reduce administrator prompts.
+- The current Windows client stores settings in browser local storage inside the Tauri WebView. A future iteration should migrate the GitHub App session token to a Tauri secure storage plugin.

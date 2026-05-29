@@ -66,6 +66,7 @@
   - 路径：`windows/openhub-tauri`。
   - 技术栈：Tauri v2 + Rust + 静态 Web 前端。
   - 产物：NSIS `.exe` 安装包和 MSI `.msi` 安装包。
+  - 应用窗口、NSIS / MSI 安装包、开始菜单和桌面快捷方式统一使用 `src-tauri/icons/icon.ico`，避免 Windows 版本打开后或快捷方式缺失图标。
   - Windows 代码必须和 macOS 原生代码隔离，不能影响 macOS 打包脚本和 SwiftUI 工程。
 - CI 打包：
   - Windows 安装包通过 `.github/workflows/windows-tauri.yml` 在 `windows-latest` 环境构建。
@@ -87,7 +88,7 @@
   - Worker 发起 GitHub 授权时不显式传递 GitHub Web Callback `redirect_uri`，由 GitHub 使用应用后台登记的 Callback URL，避免 Callback URL 严格匹配误判。
   - 客户端不得内置 GitHub App Client Secret。
   - 客户端不得内置 GitHub App Private Key。
-  - 当前客户端保留 Personal Access Token 手动登录作为备用方式。
+  - 当前客户端仅保留 GitHub App 登录，不再提供 Personal Access Token 备用登录。
 
 ## 4. 核心功能
 
@@ -109,7 +110,7 @@
 - 分类入口：更符合中文软件浏览习惯，包含效率办公、开发编程、AI 工具、系统增强、菜单栏工具、终端命令行、网络代理、下载工具、截图录屏、图片设计、音视频、笔记写作、阅读翻译、文件管理、安全隐私、学习教育、数据库、浏览器扩展、游戏娱乐、硬件外设。
 - 平台筛选：Apple Silicon、Intel、Universal、macOS 最低版本。
 - 下载格式筛选：`.dmg`、`.zip`、`.pkg`、`.app`、`.tar.gz`、Homebrew Cask。
-- 空状态要求：推荐页加载失败时展示可恢复状态，包括“重新加载”“切换 GitHub Token”“查看离线示例”，不能导致页面布局变形。
+- 空状态要求：推荐页加载失败时展示可恢复状态，包括“重新加载”“重新登录 GitHub App”“查看离线示例”，不能导致页面布局变形。
 
 ### 4.2 搜索
 
@@ -223,15 +224,18 @@
 - GitHub Star 同步：
   - 用户登录 GitHub 后，在 app 内收藏仓库时，同时调用 GitHub Star API。
   - 取消收藏时，同时取消 GitHub Star。
+  - 分类列表和搜索列表不展示打开链接、Star / Unstar 等行内功能按钮，保持浏览和选择项目的主流程。
+  - 收藏列表不展示额外功能按钮，仓库卡片点击时直接打开对应 GitHub 仓库页面。
   - GitHub Star 同步失败时保留本地收藏状态，并在状态栏提示用户稍后重试。
   - GitHub App 登录方式需要在 GitHub App 后台开启 `Starring` 读写权限：
     - GitHub App Settings -> Permissions & events。
     - Account permissions -> Starring -> Read and write。
     - 修改权限后用户需要重新授权安装/登录该 GitHub App，旧 session/token 不会自动获得新权限。
-  - 如果返回 HTTP 403，提示用户检查 GitHub Token 权限：
-    - fine-grained token 需要 `Starring` 写权限。
+  - 如果返回 HTTP 403，提示用户检查 GitHub App 权限并重新授权：
+    - GitHub App 需要 `Starring` 读写权限。
     - classic token 可使用 `public_repo` 或 `repo` 权限。
   - 未登录时只执行本地收藏，并提示登录后可同步 GitHub Star。
+  - GitHub App access token 是唯一登录凭据，同步 Star、读取个人仓库和推送代码时不得读取或依赖备用 Token。
 - 自定义合集：例如“新 Mac 必装”、“开发环境”、“菜单栏工具”。
 - 可选 iCloud 同步，后续版本实现。
 - 导入导出 JSON，方便迁移。
@@ -258,6 +262,63 @@
   - 顶部：搜索。
   - 中部：分类入口，紧跟在搜索下方；“推荐”是默认首页。
   - 底部：收藏、下载、更新、设置、登录 / 个人中心。
+
+### 4.10 错误报告与问题反馈
+
+- 所有运行时错误、网络失败、GitHub API 失败、下载失败、登录失败、Star 同步失败和窗口未捕获异常，都应记录到本地运行错误队列。
+- 错误记录保留最近 200 条，包含时间、来源、当前频道、当前选中仓库和错误消息。
+- 设置中心必须提供“下载错误报告”入口：
+  - macOS 版本导出 JSON 到用户 Downloads 文件夹，并在 Finder 中定位该文件。
+  - Windows/Tauri 版本通过 WebView 下载 JSON 文件，包含浏览器 user agent、当前视图、选中仓库和错误数组。
+- 设置中心必须提供“清空错误记录”入口，用户可在反馈后删除本地错误记录。
+- 错误报告不得包含 GitHub access token、Keychain 内容或本地源码文件内容。
+
+### 4.11 设置中心清空缓存
+
+- 设置中心必须提供“清空缓存”操作，并通过二次确认弹窗避免误点。
+- 清空内容：
+  - 本机配置。
+  - 收藏列表。
+  - 下载记录。
+  - 本地仓库列表缓存。
+  - 分类缓存和搜索结果。
+  - GitHub App session id。
+  - GitHub access token。
+  - Keychain 中的 `github-session-id`、`github-app-access-token`、历史兼容残留的 `github-fallback-token` 和旧版 `github-token`。
+- 不删除：
+  - 已下载到磁盘的文件。
+  - 本地克隆仓库目录。
+
+### 4.12 代码频道同步流程
+
+- 同步全部改动必须按以下流程执行：
+  1. 清理 stale `.git/index.lock`。
+  2. 自动解析真实 `owner/repo`。
+  3. 解析当前分支。
+  4. 暂存全部改动。
+  5. 有 staged 改动时才 commit。
+  6. 检查 upstream。
+  7. 执行 `git pull --rebase --autostash origin <当前分支>`。
+  8. 执行 `git push HEAD:refs/heads/<当前分支>`。
+  9. 刷新 Git 状态，并显示 ahead / behind。
+- 如果本地已经提交但未推送，状态面板必须显示“有本地提交未推送”，不能只显示“工作区干净”。
+- 如果连接 `github.com:443` 失败，提示用户本地提交已存在但尚未推送，并引导检查网络或代理。
+
+### 4.13 个人中心仓库表格
+
+- 个人中心头部 GitHub 账号卡片保持稳定，不因列表切换而变化。
+- “我的仓库”和“星标仓库”使用 table/segmented 切换。
+- 默认各加载 20 个，列表滚动到底部后每次继续加载 20 个。
+- 个人中心仓库表格必须使用独立固定高度滚动区域，不能依赖外层页面滚动触发加载；避免列表初次渲染时末行 `onAppear` 连续触发，把后续分页一次性加载完导致 app 卡死。
+- 列表操作按钮固定宽度并居中，避免滚动和切换时布局跳动。
+
+### 4.14 图标与 Windows 打包
+
+- macOS 图标源图必须保持 1024x1024，并重新生成完整 `.iconset` 与 `.icns`。
+- Windows/Tauri 图标必须同步更新 PNG 资源和 `icon.ico`。
+- README 中展示图标限制为 128x128。
+- Windows Tauri release 必须使用 `windows_subsystem = "windows"`，避免启动时弹出 cmd。
+- Windows NSIS 安装模式使用当前用户安装，减少管理员权限弹窗。
 - 每个频道点击都必须有明确响应，不允许出现“点击无反应”。
 - 频道切换时保留各自上下文：
   - 推荐/分类：保留热门榜单、分类和滚动位置。
@@ -276,17 +337,20 @@
   - macOS 客户端通过 `openhub://auth/callback` 接收 `session_id`。
   - 客户端调用 `/auth/session` 获取当前会话信息，并将 session id 与访问令牌保存到 macOS Keychain。
   - GitHub App 授权 URL 不传 OAuth `scope`，权限完全由 GitHub App 后台配置和用户安装授权决定。
-- 保留 GitHub Personal Access Token 登录作为备用方式：
+- 不再提供 GitHub Personal Access Token 登录入口：
+  - 登录入口统一为 GitHub App OAuth。
+  - macOS 使用系统 `ASWebAuthenticationSession`，授权页在当前 app 登录流程内打开，回调不会再拉起新的 OpenHub 实例。
+  - Windows/Tauri 使用同一个 Cloudflare OAuth 后端，在当前 Tauri WebView 中跳转授权并带 `session_id` 回到应用页面。
   - 用户输入 token 后调用 GitHub `/user` 验证身份。
   - 登录成功后展示头像、用户名、昵称、个人主页链接。
   - token 存储在本地 macOS Keychain。
-  - 如需 Fork、克隆私有仓库、push 同步，Token 需要具备对应 `repo` 权限。
+  - 如需 Fork、克隆私有仓库、push 同步，GitHub App 需要安装到目标账号/仓库，并具备对应读写权限。
 - 个人中心展示：
   - 我的仓库。
   - 我的仓库检索。
   - 我的星标仓库。
   - 星标仓库检索。
-  - 我的仓库和星标仓库默认各加载前 10 个，点击“加载更多”每次继续加载 10 个。
+  - 我的仓库和星标仓库默认各加载前 20 个，列表滚动到底部后每次继续加载 20 个。
   - GitHub 主页入口。
   - 克隆仓库到本地工作区。
   - Fork 仓库到自己的 GitHub 账号。
@@ -315,7 +379,7 @@
 - 首版目标：
   - 支持 Windows 10 和 Windows 11。
   - 默认进入推荐分类。
-  - 支持分类浏览、滚动加载、分类预加载、搜索、收藏、下载链接打开、下载记录、设置中心、语言切换、GitHub App 登录、备用 Token 登录和 Star 同步。
+  - 支持分类浏览、滚动加载、分类预加载、搜索、收藏、下载链接打开、下载记录、设置中心、语言切换、GitHub App 登录和 Star 同步。
   - Release 构建必须使用 Windows GUI subsystem，启动客户端时不得弹出 cmd/控制台窗口。
   - NSIS 安装模式默认使用当前用户安装，避免普通安装流程触发管理员控制台。
 - 技术约束：
@@ -394,6 +458,10 @@
   - 使用 KV 保存短期 OAuth state，默认 10 分钟过期。
   - 使用 D1 保存登录 session 和 GitHub user token。
   - 为正式版客户端提供 GitHub App 登录能力。
+- GitHub App token 格式兼容性：
+  - 当前 OpenHub 使用 GitHub OAuth user-to-server token，不调用 GitHub App installation token 创建接口。
+  - 后端 D1 `access_token` 使用 `TEXT`，macOS 使用 Keychain `String`，Windows 使用 WebView localStorage，均不假设 token 长度或固定前缀。
+  - 如果后续接入 installation token，必须兼容新的 `ghs_...` stateless token，不能硬编码 40 位长度、固定前缀或旧格式正则。
 - 部署包要求：
   - Cloudflare 后端部署代码单独位于 `backend/cloudflare`。
   - 包含 Worker 源码、D1 migration、Wrangler 配置、依赖清单和本地 secret 示例。
@@ -408,7 +476,7 @@
   - `POST /auth/logout`
 - 安全约束：
   - Client Secret、Private Key 不得写入客户端或仓库。
-  - 公开测试版仍保留 Personal Access Token 手动登录。
+  - 公开测试版不再保留 Personal Access Token 手动登录。
   - D1 中 token 首版为 MVP 存储，公开生产前需要增加加密、过期清理、CORS 白名单和速率限制。
 
 ## 5. 数据来源与 GitHub API
@@ -424,7 +492,7 @@
 
 ### 5.2 GitHub API 注意事项
 
-- 未认证请求限流较低，应支持用户配置 GitHub Personal Access Token。
+- 未认证请求限流较低，登录后统一使用 GitHub App session token 提高 API 可用性。
 - 认证后限流提升，但必须安全存储 token，建议使用 macOS Keychain。
 - Search API 有自己的查询限制和排序规则，不适合作为唯一实时数据源。
 - Release Assets 的文件命名没有统一规范，需要做启发式解析。
@@ -784,7 +852,7 @@ recent update score        0-80
 - 收藏和下载空状态固定布局。
 - 中文软件分类体系。
 - 本地缓存。
-- GitHub Token 设置。
+- GitHub App 登录与权限设置。
 - 基础安全提示。
 
 ### MVP 可延后

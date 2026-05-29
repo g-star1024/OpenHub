@@ -355,6 +355,86 @@ select {
   gap: 18px;
 }
 
+.account-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.segmented {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+}
+
+.segmented button {
+  border: 0;
+  padding: 6px 10px;
+}
+
+.segmented button.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.repo-table {
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.repo-table-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 92px 74px 110px;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+}
+
+.repo-table-row:first-child {
+  border-top: 0;
+}
+
+.repo-table-head {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--panel-soft);
+}
+
+.repo-table small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.table-actions {
+  display: flex;
+  justify-content: center;
+}
+
+.table-actions button {
+  width: 86px;
+}
+
+.load-more-account {
+  margin-top: 12px;
+  padding: 12px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .field {
   display: grid;
   gap: 8px;
