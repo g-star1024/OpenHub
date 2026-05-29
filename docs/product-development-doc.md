@@ -224,6 +224,9 @@
   - 用户登录 GitHub 后，在 app 内收藏仓库时，同时调用 GitHub Star API。
   - 取消收藏时，同时取消 GitHub Star。
   - GitHub Star 同步失败时保留本地收藏状态，并在状态栏提示用户稍后重试。
+  - Star 同步必须根据当前登录来源给出不同错误提示：
+    - GitHub App 登录：提示检查 GitHub App `Starring` 读写权限，并重新授权登录。
+    - 备用 Personal Access Token 登录：提示检查备用 Token 的 Starring/public_repo/repo 权限。
   - GitHub App 登录方式需要在 GitHub App 后台开启 `Starring` 读写权限：
     - GitHub App Settings -> Permissions & events。
     - Account permissions -> Starring -> Read and write。
@@ -276,6 +279,7 @@
   - macOS 客户端通过 `openhub://auth/callback` 接收 `session_id`。
   - 客户端调用 `/auth/session` 获取当前会话信息，并将 session id 与访问令牌保存到 macOS Keychain。
   - GitHub App 授权 URL 不传 OAuth `scope`，权限完全由 GitHub App 后台配置和用户安装授权决定。
+  - GitHub App 登录 token 与备用 Personal Access Token 必须分开保存，设置中心编辑备用 Token 时不得覆盖当前 GitHub App session token。
 - 保留 GitHub Personal Access Token 登录作为备用方式：
   - 用户输入 token 后调用 GitHub `/user` 验证身份。
   - 登录成功后展示头像、用户名、昵称、个人主页链接。
@@ -286,6 +290,8 @@
   - 我的仓库检索。
   - 我的星标仓库。
   - 星标仓库检索。
+  - 个人中心头部账号信息保持不变。
+  - 我的仓库和星标仓库使用同一区域内的 tab/table 切换展示。
   - 我的仓库和星标仓库默认各加载前 10 个，点击“加载更多”每次继续加载 10 个。
   - GitHub 主页入口。
   - 克隆仓库到本地工作区。
@@ -308,6 +314,12 @@
   - 简体中文：推荐、热门、效率办公、开发编程等。
   - English：Recommended、Popular、Productivity、Developer Tools 等。
   - 列表标题、侧边栏分类入口、项目卡片分类标签必须同步切换。
+- 设置中心提供“清空缓存”功能：
+  - 清空本机配置、收藏、下载记录、本地仓库列表、分类缓存、搜索结果、GitHub App session id 和 GitHub 访问令牌。
+  - 同步删除 macOS Keychain 中的 `github-session-id` 与 `github-token`。
+  - 清空前必须二次确认。
+  - 不删除已经下载到磁盘的文件。
+  - 不删除本地克隆仓库。
 - 仓库原始信息、Release 文本和项目 README 不做强制翻译，只清洗异常文本。
 
 ### 4.12 Windows Tauri 版

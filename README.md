@@ -19,6 +19,8 @@ OpenHub 是一个免费开源的桌面客户端，用于发现、收藏、查看
 - 本地收藏、下载记录与稳定空状态
 - 登录 GitHub 后收藏同步 GitHub Star
 - GitHub App 登录使用 Starring 读写权限同步 Star；权限不足时会保留本地收藏
+- GitHub App token 与备用 Personal Access Token 分开保存，避免权限提示混淆
+- 个人中心仓库和星标列表使用表格切换
 - GitHub 登录、个人中心、我的仓库与星标仓库
 - 个人中心仓库和星标仓库支持搜索并打开 GitHub 网页端
 - Fork 仓库、检索个人仓库、克隆到本地工作区
@@ -31,6 +33,7 @@ OpenHub 是一个免费开源的桌面客户端，用于发现、收藏、查看
 - 支持修改本地仓库路径
 - 代理设置，可加速 GitHub API 与 git clone / push
 - GitHub App 登录，session id 和访问令牌存储在 macOS Keychain
+- 设置中心支持清空缓存，包括本地配置和 Keychain 中的 GitHub 凭据
 - 界面语言设置，支持简体中文和 English
 - 标准 macOS `.icns` 应用图标
 - Windows/Tauri 版本源码，面向 Windows 10 和 Windows 11
@@ -89,7 +92,7 @@ OpenHub 不重新分发第三方二进制文件。下载资源来自项目维护
 
 OpenHub 是本地优先的开源桌面客户端。应用不会内置第三方统计 SDK，不会主动收集、出售或上传用户的个人数据。
 
-OpenHub 会在本机保存必要配置，包括界面语言、下载源、代理设置、本地仓库路径、收藏列表、下载记录、GitHub App session id 和 GitHub 访问令牌。macOS 版本会将 GitHub session id 和访问令牌保存到系统 Keychain；其他普通配置保存在本机用户环境中。
+OpenHub 会在本机保存必要配置，包括界面语言、下载源、代理设置、本地仓库路径、收藏列表、下载记录、GitHub App session id 和 GitHub 访问令牌。macOS 版本会将 GitHub session id 和访问令牌保存到系统 Keychain；其他普通配置保存在本机用户环境中。设置中心提供清空缓存功能，可删除本机配置和 Keychain 中的 GitHub 凭据，但不会删除已下载文件或本地克隆仓库。
 
 OpenHub 会在用户主动使用相关功能时请求 GitHub API，例如搜索仓库、读取 Release、登录 GitHub、读取个人仓库、同步 Star、Fork、克隆仓库或推送本地代码。GitHub 请求受 GitHub 隐私政策和账号权限控制。OpenHub 的 Cloudflare 后端仅用于 GitHub App OAuth 回调和 session 中转；OpenHub 不会把仓库代码或下载记录发送到 OpenHub 自有服务器。
 
@@ -132,6 +135,8 @@ OpenHub is a free and open-source desktop client for discovering, collecting, vi
 - Local favorites, download history, and stable empty states
 - GitHub Star sync after signing in
 - GitHub App login uses Starring read/write permission for Star sync and keeps local favorites if remote sync is denied
+- GitHub App tokens and fallback Personal Access Tokens are stored separately to avoid permission conflicts
+- Account repositories and starred repositories share a tabbed table view
 - GitHub sign-in, account center, owned repositories, and starred repositories
 - Account repositories and starred repositories can be searched and opened on GitHub web
 - Fork repositories, search owned repositories, and clone into a local workspace
@@ -144,6 +149,7 @@ OpenHub is a free and open-source desktop client for discovering, collecting, vi
 - Configurable local repository workspace path
 - Proxy settings for GitHub API and git clone / push
 - GitHub App login with session id and access token stored in macOS Keychain
+- Clear cache from Settings, including local settings and GitHub credentials stored in Keychain
 - Interface language settings for Simplified Chinese and English
 - Standard macOS `.icns` app icon
 - Windows/Tauri source for Windows 10 and Windows 11
@@ -202,7 +208,7 @@ The current packaging script uses ad-hoc signing for local testing and open-sour
 
 OpenHub is a local-first open-source desktop client. It does not include third-party analytics SDKs and does not proactively collect, sell, or upload personal data.
 
-OpenHub stores necessary local settings on the user's device, including interface language, download sources, proxy settings, local repository path, favorites, download history, GitHub App session id, and GitHub access token. The macOS app stores the GitHub session id and access token in the system Keychain; regular settings are stored in the local user environment.
+OpenHub stores necessary local settings on the user's device, including interface language, download sources, proxy settings, local repository path, favorites, download history, GitHub App session id, and GitHub access token. The macOS app stores the GitHub session id and access token in the system Keychain; regular settings are stored in the local user environment. Settings include a clear-cache action that removes local settings and GitHub credentials from Keychain, but does not delete downloaded files or locally cloned repositories.
 
 OpenHub calls GitHub APIs only when the user uses related features, such as repository search, Release lookup, GitHub sign-in, owned repository lookup, Star sync, Fork, clone, or pushing local code. GitHub requests are governed by GitHub's privacy policy and account permissions. OpenHub's Cloudflare backend is used only for GitHub App OAuth callback and session relay; OpenHub does not send repository code or download history to an OpenHub-owned server.
 
