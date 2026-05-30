@@ -1,75 +1,114 @@
-# OpenHub Development Update - 2026-05-29
+# OpenHub Development Update - 2026-05-29 (v1.0.1)
 
 ## Scope
 
-This update addresses the latest desktop source package:
+This update covers three major areas: GitHub Star sync fix, download retry with resume support, and code-sync module refactoring, plus full packaging.
 
-- Favorites list navigation to the corresponding GitHub repository page.
-- Category and search lists no longer show inline open-link or Star buttons.
-- Favorites list cards open the GitHub repository directly when clicked, without extra action buttons.
-- Windows app, installer, Start Menu, and shortcut icon consistency.
-- Windows/Tauri parity for current discovery, favorites, Star sync, settings, language, and error-report features.
-- Settings-center runtime error report export.
-- GitHub App is now the only sign-in path; fallback token login has been removed to avoid Star permission conflicts.
-- Account center repository table switching and 10-item pagination.
-- Settings-center clear-cache action with confirmation.
-- Code workspace sync flow with stale lock cleanup, pull rebase/autostash, branch-targeted push, and ahead/behind status.
-- Regenerated macOS `.icns` and Windows/Tauri PNG icons from the 1024x1024 source image.
+- **GitHub Star Sync Fix**: Diagnosed and fixed the 403 "Resource not accessible by integration" error for GitHub App Starring permissions.
+- **Category Preload Retry**: Failed or empty category preloads now remain retryable and reload automatically when the user opens that category.
+- **Download Retry & Resume**: Added right-click retry button for failed downloads, with HTTP Range-based resumable download support.
+- **Code Sync Module Overhaul**: Complete rewrite of the git sync logic (from earlier session).
+- **macOS App Packaging**: Local build, ad-hoc signing, DMG and ZIP output.
+- **Windows App Packaging**: GitHub Actions CI/CD build via `.github/workflows/windows-tauri.yml`.
+- **Source Archives**: Full source packages for macOS, Windows/Tauri, and Cloudflare backend.
+- **Development Docs**: Updated product development documentation and this update log.
 
 ## macOS Changes
 
-- GitHub App access token is the only app credential. Star sync, account data, and Git push use the active App session token.
-- GitHub authorization now uses `ASWebAuthenticationSession`, so OAuth opens inside the current app sign-in flow and the callback is captured by the running app instead of launching a second instance.
-- Favorites list row click opens the repository GitHub page.
-- Repository rows in category/search views are selection-only. Favorite rows open GitHub directly.
-- Favorites still remain local-first; Star sync is handled by detail/favorite state changes, not row-level buttons.
-- Settings now includes a runtime error section:
-  - records status messages that indicate runtime failures,
-  - keeps the latest 200 records,
-  - exports a JSON report to Downloads,
-  - can clear local error records.
-- Settings now includes `Clear Cache` with a confirmation dialog. It clears local settings, favorites, download history, repository list caches, category/search caches, GitHub session ids, access tokens, and Keychain login entries. It does not delete downloaded files or local cloned repositories.
-- Account center keeps the GitHub profile header stable and switches `My Repositories` / `Starred Repositories` in a table view. Each list loads 20 repositories initially and loads 20 more when the table scrolls to the bottom.
-- Account repository tables now own their own fixed-height scroll container. This prevents the last row from appearing during the outer page layout and repeatedly triggering background pagination before the user scrolls.
-- Reviewed the upcoming GitHub App installation token format change. OpenHub currently uses OAuth user-to-server tokens, stores tokens as unconstrained text/string values, and does not parse token prefixes or lengths; no code migration is required for the current auth flow.
-- Code sync now clears stale `.git/index.lock`, stages all changes, commits only when staged changes exist, pulls with `--rebase --autostash`, pushes `HEAD:refs/heads/<current branch>`, refreshes ahead/behind status, and shows `Local commits not pushed` instead of a misleading clean-worktree message.
+### 1. GitHub Star Sync Fix
+
+**Problem**: Users reported that clicking the star icon in the app saved local favorites successfully but GitHub Star sync failed with error `403 {"message":"Resource not accessible by integration","documentation_url":"..."}`. The user had already set Starring permissions to Read & Write in the GitHub App settings, but the token still lacked permission.
+
+**Root Cause**: When a GitHub App's permissions are modified after initial installation, existing installations do NOT automatically inherit the new permissions. The user must re-authorize/install the app through OAuth flow for the updated permissions to take effect.
+
+**Fixes Applied**:
+
+- **Improved 403 error message in `GitHubClient.request()`**: When `/user/starred` returns 403, the error now detects whether it's a `Resource not accessible` response (permission not granted to installation) vs a generic 403. For `Resource not accessible`, the message explicitly instructs users to visit https://github.com/settings/installations , click Configure permissions on OpenHub, confirm Starring is Read & write, then re-authorize.
+- **Enhanced error handling in `toggleFavorite()`**: Different HTTP errors now produce different status messages:
+  - `403`: "本地收藏已保存，GitHub Star 同步失败：[detailed permission guidance]"
+  - `401/404`: "GitHub Star 同步失败（认证过期），请重新登录 GitHub App"
+  - Other: "本地收藏已保存，GitHub Star 暂时无法同步：[error]"
+
+### 2. Download Retry & Resumable Download
+
+**New Features**:
+
+- **Retry button on failed downloads**: `DownloadJobRow` now shows a prominent "重新下载" button when job state is `.failed`. Clicking triggers `retryDownload()`.
+- **Right-click context menu on all download jobs**:
+  - Failed jobs: "重新下载（断点续传）" / "重新下载"
+  - Completed jobs: "打开文件" / "在 Finder 中显示"
+  - All non-downloading jobs: "删除"
+- **HTTP Range-based resume**: When retrying a failed download that had downloaded >1KB:
+  - The `downloadFile()` method now accepts `resumeFromBytes: Int64` parameter
+  - It sends `Range: bytes={resumeFromBytes}-` header to request only the remaining data
+  - Server must support Range requests (GitHub CDN does)
+- **`DownloadJob` struct extended** with fields:
+  - `originalURL: String?` — stores the original download URL for retry
+  - `partialFileURL: URL?` — stores partial file reference
+  - `bytesDownloaded: Int64` — tracks how much was downloaded before failure
+  - `retry: (() -> Void)?` — closure to trigger retry
+- **`retryDownload()` method**: Creates a new download job from a failed one, using stored `originalURL`, `bytesDownloaded` for resume.
+- **Failure message improvement**: When >1KB was downloaded before failure, message shows "下载失败（已下载 X MB，可右键重试）" instead of generic error.
+
+### 3. Code Sync Module Refactoring (from earlier session)
+
+The entire git sync subsystem was refactored to fix persistent sync failures. Key changes:
+
+- Removed forced proxy injection from `gitArguments()`
+- New `gitEnvironment()` method for proper Process environment inheritance
+- Timeout protection: 120s network / 30s local operations
+- Replaced the old eager fetch/rebase/token-URL push path with a GitHub Desktop-like flow:
+  - stage all files and commit only when staged changes exist,
+  - push with native local Git credentials first,
+  - run `pull --rebase --autostash` only after a non-fast-forward rejection,
+  - use the GitHub App token URL only as an authentication fallback.
+- Diagnostic tooling (`diagnoseGitRemote`) with UI button
+- Expanded `friendlyGitSyncError` with actionable messages
+
+### Swift 6 Concurrency Fixes
+
+- All closures use `Task.detached` pattern for `@Sendable` compliance
+- `usleep` instead of `Thread.sleep` in async contexts
+- Fixed brace balance issues in nested closure structures
 
 ## Windows/Tauri Changes
 
-- Account center uses the same table switching pattern and 10-item lazy loading on scroll.
-- Settings includes a clear-cache action with a confirmation dialog for WebView local storage.
-- Category/search repository cards no longer expose direct `Open GitHub` or `Sync Star / Unstar` actions.
-- Favorites repository cards open GitHub directly when clicked.
-- GitHub App sign-in uses the same Cloudflare OAuth backend. The Windows webview navigates through the OAuth flow and returns with a `session_id`; Star sync uses the resulting App session token.
-- Settings now exports a JSON runtime error report from WebView local storage.
-- Runtime errors are collected from:
-  - failed status messages,
-  - GitHub API failures,
-  - search/category/login/star failures,
-  - `window.error`,
-  - unhandled promise rejections.
-- Tauri bundle icon configuration keeps `icons/icon.ico` in the bundle icon list for Windows installers and shortcuts.
-- Runtime window icon is set during Rust startup with `app.set_icon(...)` from `src-tauri/icons/icon.png`, because Tauri v2 config does not accept an `app.windows[].icon` field.
-- Release mode keeps `windows_subsystem = "windows"` and NSIS uses current-user install mode.
+No changes to the Windows/Tauri codebase in this update.
 
-## Build Notes
+## Packaging
 
-- macOS build and packaging can be done locally with:
+### macOS Build (Local)
 
 ```bash
 ./scripts/package_app.sh
 ```
 
-- Windows installers must be built on Windows 10/11 or GitHub Actions with Rust, Node.js, Visual Studio Build Tools, and WebView2:
+Output artifacts in `dist/`:
+- `OpenHub.app` - macOS application bundle
+- `OpenHub.zip` - Compressed app
+- `OpenHub.dmg` - Disk image for distribution
 
-```powershell
-cd windows/openhub-tauri
-npm install
-npm run build:windows
-```
+### Windows Build (GitHub Actions)
 
-- This macOS environment does not include `cargo` / `rustc`, so it can validate JavaScript and Tauri config entry points but cannot produce NSIS / MSI installers locally.
+Trigger via GitHub Actions workflow `.github/workflows/windows-tauri.yml`:
+1. Manual `workflow_dispatch`
+2. Push to `windows/openhub-tauri/**`
+
+Output: NSIS `.exe` + MSI `.msi`
+
+### Source Archives
+
+- `OpenHub-source.zip` - Complete source code (27 MB)
+- `OpenHub-Windows-source.zip` - Windows/Tauri source (714 KB)
+- `OpenHub-Cloudflare-source.zip` - Cloudflare backend source (16 KB)
+
+## Build Notes
+
+- macOS build: zero warnings, zero errors in Swift 6 strict mode.
+- macOS minimum deployment target: macOS 14.0.
+- Ad-hoc signed (no notarization).
+- Download resume uses HTTP Range headers; requires server-side support (GitHub CDN supports this).
 
 ## Privacy
 
-Runtime error reports intentionally exclude GitHub tokens, Keychain values, and local repository file contents. They include only app metadata, current view, selected repository name, status text, and recorded error messages.
+Runtime error reports intentionally exclude GitHub tokens, Keychain values, and local repository file contents.

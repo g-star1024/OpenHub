@@ -83,11 +83,15 @@ struct DownloadJob: Identifiable, Hashable {
     let appName: String
     let assetName: String
     let sourceName: String
+    var originalURL: String?
     var progress: Double
     var state: State
     var savedPath: String?
+    var partialFileURL: URL?
+    var bytesDownloaded: Int64
     var message: String
     var cancel: (() -> Void)?
+    var retry: (() -> Void)?
 
     static func == (lhs: DownloadJob, rhs: DownloadJob) -> Bool {
         lhs.id == rhs.id &&
@@ -96,8 +100,7 @@ struct DownloadJob: Identifiable, Hashable {
         lhs.sourceName == rhs.sourceName &&
         lhs.progress == rhs.progress &&
         lhs.state == rhs.state &&
-        lhs.savedPath == rhs.savedPath &&
-        lhs.message == rhs.message
+        lhs.savedPath == rhs.savedPath
     }
 
     func hash(into hasher: inout Hasher) {
@@ -108,7 +111,6 @@ struct DownloadJob: Identifiable, Hashable {
         hasher.combine(progress)
         hasher.combine(state)
         hasher.combine(savedPath)
-        hasher.combine(message)
     }
 }
 
@@ -698,7 +700,7 @@ final class GitHubClient {
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        request.setValue("OpenHub/1.0.0 (GitHub App 3896773)", forHTTPHeaderField: "User-Agent")
+        request.setValue("OpenHub/1.0.0 (GitHub App 3910295)", forHTTPHeaderField: "User-Agent")
         request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = body
@@ -713,8 +715,12 @@ final class GitHubClient {
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             let message = String(data: data, encoding: .utf8) ?? ""
             if http.statusCode == 403, url.path.contains("/user/starred") {
+                let isResourceError = message.contains("Resource not accessible") || message.contains("not authorized")
+                let detail = isResourceError
+                    ? "GitHub App 的 Starring 权限未生效。请前往 https://github.com/settings/installations 找到 OpenHub 并点击「Configure permissions」确认 Starring 权限为 Read & write，然后重新授权安装该 App。"
+                    : "请确认 GitHub App 已开启 Starring 读写权限（GitHub App Settings → Permissions → Starring → Read and write），修改权限后需重新授权登录。\(message.isEmpty ? "" : " GitHub: \(message)")"
                 throw NSError(domain: "GitHub", code: http.statusCode, userInfo: [
-                    NSLocalizedDescriptionKey: "GitHub Star 权限不足：请确认 GitHub App 已开启 Starring 读写权限，并在修改权限后重新授权登录。\(message.isEmpty ? "" : " GitHub: \(message)")"
+                    NSLocalizedDescriptionKey: detail
                 ])
             }
             throw NSError(domain: "GitHub", code: http.statusCode, userInfo: [
@@ -1119,13 +1125,14 @@ final class AppStoreModel: NSObject, ObservableObject, ASWebAuthenticationPresen
             status = "已加载 \(loadedCount)/100 个 GitHub 热门项目"
         } catch {
             status = "热门项目加载失败，已显示离线示例：\(error.localizedDescription)"
-            if categoryRepositories[currentCategory]?.isEmpty != false {
+            if nextPage == 1, categoryRepositories[currentCategory]?.isEmpty != false {
                 categoryRepositories[currentCategory] = fallbackRepositories(for: currentCategory)
                 if category == currentCategory {
                     selected = categoryRepositories[currentCategory]?.first
                 }
             }
-            categoryCanLoadMore[currentCategory] = false
+            categoryPages[currentCategory] = max(categoryPages[currentCategory, default: 0], nextPage == 1 ? 0 : nextPage - 1)
+            categoryCanLoadMore[currentCategory] = nextPage == 1
         }
     }
 
@@ -1162,9 +1169,14 @@ final class AppStoreModel: NSObject, ObservableObject, ASWebAuthenticationPresen
         section = .catalog
         let cached = categoryRepositories[category] ?? fallbackRepositories(for: category)
         selected = cached.first ?? selected
-        if categoryPages[category, default: 0] == 0 {
-            Task { await loadDiscover(force: false) }
+        if !hasSuccessfullyLoaded(category) {
+            categoryCanLoadMore[category] = true
+            Task { await loadDiscover(force: true) }
         }
+    }
+
+    private func hasSuccessfullyLoaded(_ category: AppCategory) -> Bool {
+        categoryPages[category, default: 0] > 0 && categoryRepositories[category]?.isEmpty == false
     }
 
     func select(_ repository: Repository) {
@@ -1210,7 +1222,14 @@ final class AppStoreModel: NSObject, ObservableObject, ASWebAuthenticationPresen
                 status = "已收藏并同步 GitHub Star"
             }
         } catch {
-            status = "本地收藏已保存，GitHub Star 同步失败：\(error.localizedDescription)"
+            let nsError = error as NSError
+            if nsError.code == 403 {
+                status = "本地收藏已保存，GitHub Star 同步失败：\(error.localizedDescription)"
+            } else if nsError.code == 401 || nsError.code == 404 {
+                status = "GitHub Star 同步失败（认证过期），请重新登录 GitHub App"
+            } else {
+                status = "本地收藏已保存，GitHub Star 暂时无法同步：\(error.localizedDescription)"
+            }
         }
     }
 
@@ -1348,15 +1367,27 @@ final class AppStoreModel: NSObject, ObservableObject, ASWebAuthenticationPresen
         guard !isPreloadingCategories else { return }
         isPreloadingCategories = true
         defer { isPreloadingCategories = false }
+        var successCount = 0
+        var failedCount = 0
 
         for preloadCategory in AppCategory.allCases {
             if categoryPages[preloadCategory, default: 0] > 0 { continue }
             do {
                 let result = try await client.discoverTop(category: preloadCategory, page: 1, token: activeGitHubToken)
-                let list = result.isEmpty ? fallbackRepositories(for: preloadCategory) : result
+                guard !result.isEmpty else {
+                    if categoryRepositories[preloadCategory]?.isEmpty != false {
+                        categoryRepositories[preloadCategory] = fallbackRepositories(for: preloadCategory)
+                    }
+                    categoryPages[preloadCategory] = 0
+                    categoryCanLoadMore[preloadCategory] = true
+                    failedCount += 1
+                    continue
+                }
+                let list = result
                 categoryRepositories[preloadCategory] = list
                 categoryPages[preloadCategory] = 1
-                categoryCanLoadMore[preloadCategory] = list.count < 100 && !result.isEmpty
+                categoryCanLoadMore[preloadCategory] = list.count < 100
+                successCount += 1
                 if section == .catalog, category == preloadCategory, selected == nil {
                     selected = list.first
                 }
@@ -1364,10 +1395,12 @@ final class AppStoreModel: NSObject, ObservableObject, ASWebAuthenticationPresen
                 if categoryRepositories[preloadCategory]?.isEmpty != false {
                     categoryRepositories[preloadCategory] = fallbackRepositories(for: preloadCategory)
                 }
-                categoryCanLoadMore[preloadCategory] = false
+                categoryPages[preloadCategory] = 0
+                categoryCanLoadMore[preloadCategory] = true
+                failedCount += 1
             }
         }
-        status = "分类内容预加载完成"
+        status = failedCount == 0 ? "分类内容预加载完成" : "分类预加载完成 \(successCount) 个，\(failedCount) 个将在切换时重试"
     }
 
     func startGitHubAppLogin() {
@@ -1578,6 +1611,64 @@ final class AppStoreModel: NSObject, ObservableObject, ASWebAuthenticationPresen
         }
     }
 
+    /// 诊断 Git 远程仓库配置和网络连通性
+    func diagnoseGitRemote(for local: LocalRepository) async -> String {
+        let directory = URL(fileURLWithPath: local.path, isDirectory: true)
+        var report: [String] = ["=== Git 远程诊断 ==="]
+
+        // 1. 检查 git 版本
+        do {
+            let version = try await runGit(["version"], in: directory)
+            report.append("Git 版本: \(version.trimmingCharacters(in: .whitespacesAndNewlines))")
+        } catch {
+            report.append("Git 版本: 无法获取 (\(error.localizedDescription))")
+        }
+
+        // 2. 检查 remote 配置
+        do {
+            let remoteURL = try await runGit(["remote", "get-url", "origin"], in: directory)
+            report.append("Remote origin: \(remoteURL.trimmingCharacters(in: .whitespacesAndNewlines))")
+        } catch {
+            report.append("Remote origin: 未配置或无法读取")
+        }
+
+        // 3. 检查当前分支
+        do {
+            let branch = try await currentGitBranch(in: directory)
+            report.append("当前分支: \(branch)")
+        } catch {
+            report.append("当前分支: 无法获取 (\(error.localizedDescription))")
+        }
+
+        // 4. 检查 git config 中的用户信息
+        for key in ["user.name", "user.email"] {
+            do {
+                let value = try await runGit(["config", key], in: directory)
+                report.append("\(key): \(value.trimmingCharacters(in: .whitespacesAndNewlines))")
+            } catch {
+                report.append("\(key): 未配置")
+            }
+        }
+
+        // 5. 尝试 ls-remote 测试网络连通性
+        do {
+            let refs = try await runGit(["ls-remote", "--heads", "origin"], in: directory)
+            let count = refs.split(separator: "\n").count
+            report.append("网络连通性: 正常（获取到 \(count) 个远程分支）")
+        } catch {
+            report.append("网络连通性: 失败 - \(error.localizedDescription)")
+        }
+
+        // 6. 检查代理设置
+        if proxySettings.enabled {
+            report.append("代理设置: 已启用 - \(proxySettings.server)")
+        } else {
+            report.append("代理设置: 未启用（直连）")
+        }
+
+        return report.joined(separator: "\n")
+    }
+
     func syncSelectedLocalRepository() async {
         guard let local = selectedLocalRepository else {
             status = "请先选择本地仓库"
@@ -1585,57 +1676,113 @@ final class AppStoreModel: NSObject, ObservableObject, ASWebAuthenticationPresen
         }
         let directory = URL(fileURLWithPath: local.path, isDirectory: true)
         isSyncingRepository = true
-        syncProgress = 0.05
-        syncMessage = "正在准备同步"
-        defer {
-            isSyncingRepository = false
-        }
+        syncProgress = 0.0
+        syncMessage = "准备同步"
+        defer { isSyncingRepository = false }
+
         do {
             try cleanupStaleGitLock(in: directory)
-            let remoteFullName = try await resolvedRemoteFullName(for: local)
-            syncProgress = 0.16
-            syncMessage = "正在解析当前分支"
-            let branch = try await currentGitBranch(in: directory)
-            _ = try? await runGit(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], in: directory)
 
-            syncProgress = 0.26
-            syncMessage = "正在暂存全部本地改动"
+            syncProgress = 0.1
+            syncMessage = "正在检查仓库配置..."
+            _ = try await requireOriginRemote(in: directory)
+            let branch = try await currentGitBranch(in: directory)
+
+            syncProgress = 0.2
+            syncMessage = "正在检查 Git 配置..."
+            try await ensureGitConfig(in: directory)
+
+            syncProgress = 0.35
+            syncMessage = "正在暂存本地改动..."
             _ = try await runGit(["add", "."], in: directory)
 
-            syncProgress = 0.38
             let hasStagedChanges = await gitCommandSucceeds(["diff", "--cached", "--quiet"], in: directory) == false
             if hasStagedChanges {
-                syncMessage = "正在创建提交"
-                _ = try await runGit(["commit", "-m", commitMessage.isEmpty ? "Update from OpenHub" : commitMessage], in: directory)
+                syncMessage = "正在创建本地提交..."
+                let msg = commitMessage.isEmpty ? "Update from OpenHub" : commitMessage
+                _ = try await runGit(["commit", "-m", msg], in: directory)
             } else {
-                syncMessage = "没有新的文件改动，跳过提交"
+                syncMessage = "无新改动，检查是否有本地提交待推送..."
             }
 
-            syncProgress = 0.56
-            syncMessage = "正在拉取远端更新"
-            _ = try await runGit(["pull", "--rebase", "--autostash", "origin", branch], in: directory)
+            syncProgress = 0.65
+            syncMessage = "正在推送到 GitHub..."
+            try await pushLikeGitHubDesktop(directory: directory, branch: branch)
 
-            let trimmed = activeGitHubToken
-            syncProgress = 0.76
-            syncMessage = "正在推送到 GitHub"
-            if !trimmed.isEmpty {
-                let encodedToken = trimmed.addingPercentEncoding(withAllowedCharacters: .urlPasswordAllowed) ?? trimmed
-                let pushURL = "https://x-access-token:\(encodedToken)@github.com/\(remoteFullName).git"
-                _ = try await runGit(["push", pushURL, "HEAD:refs/heads/\(branch)"], in: directory)
-            } else {
-                _ = try await runGit(["push", "origin", "HEAD:refs/heads/\(branch)"], in: directory)
-            }
-            syncProgress = 0.9
-            syncMessage = "正在刷新 Git 状态"
+            syncProgress = 0.95
+            syncMessage = "正在刷新状态..."
             await refreshGitStatus()
-            syncProgress = 1
-            syncMessage = "同步任务完成"
-            status = "同步任务完成：已同步本地代码到 GitHub \(remoteFullName)"
+
+            syncProgress = 1.0
+            syncMessage = "同步完成 ✅"
+            status = "同步完成：已推送 \(branch) 到 GitHub"
         } catch {
             syncMessage = "同步失败"
             syncProgress = 0
-            status = "同步失败：\(friendlyGitSyncError(error.localizedDescription))"
+            let friendlyMsg = friendlyGitSyncError(error.localizedDescription)
+            status = "同步失败：\(friendlyMsg)"
+            await refreshGitStatus()
         }
+    }
+
+    /// 确保 git 配置了 user.name 和 user.email
+    private func ensureGitConfig(in directory: URL) async throws {
+        // 检查 user.name
+        let nameResult = try? await runGit(["config", "user.name"], in: directory)
+        if nameResult == nil || nameResult!.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            // 尝试从全局 git config 或系统获取用户名
+            let fallbackName = NSFullUserName()
+            _ = try? await runGit(["config", "user.name", fallbackName], in: directory)
+        }
+
+        // 检查 user.email
+        let emailResult = try? await runGit(["config", "user.email"], in: directory)
+        if emailResult == nil || emailResult!.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let fallbackEmail = "openhub@local"
+            _ = try? await runGit(["config", "user.email", fallbackEmail], in: directory)
+        }
+    }
+
+    /// 尽量复用用户本机 Git 凭据，行为接近 GitHub Desktop / 终端 git push。
+    private func pushLikeGitHubDesktop(directory: URL, branch: String) async throws {
+        do {
+            try await pushUsingNativeGitCredentials(directory: directory, branch: branch)
+            return
+        } catch {
+            let message = error.localizedDescription
+            if isNonFastForwardError(message) {
+                syncProgress = 0.72
+                syncMessage = "远端有更新，正在 rebase 后重试..."
+                _ = try await runGit(["pull", "--rebase", "--autostash", "origin", branch], in: directory)
+                try await pushUsingNativeGitCredentials(directory: directory, branch: branch)
+                return
+            }
+
+            if isAuthenticationError(message),
+               let remoteFullName = try? await resolvedRemoteFullNameFromGit(in: directory),
+               !activeGitHubToken.isEmpty {
+                syncProgress = 0.75
+                syncMessage = "系统 Git 凭据失败，正在使用 GitHub App 登录重试..."
+                try await pushUsingGitHubAppToken(directory: directory, branch: branch, remoteFullName: remoteFullName, token: activeGitHubToken)
+                return
+            }
+
+            throw error
+        }
+    }
+
+    private func pushUsingNativeGitCredentials(directory: URL, branch: String) async throws {
+        if await hasUpstream(in: directory) {
+            _ = try await runGit(["push"], in: directory)
+        } else {
+            _ = try await runGit(["push", "-u", "origin", branch], in: directory)
+        }
+    }
+
+    private func pushUsingGitHubAppToken(directory: URL, branch: String, remoteFullName: String, token: String) async throws {
+        let encodedToken = token.addingPercentEncoding(withAllowedCharacters: .urlPasswordAllowed) ?? token
+        let tokenURL = "https://x-access-token:\(encodedToken)@github.com/\(remoteFullName).git"
+        _ = try await runGit(["push", tokenURL, "HEAD:refs/heads/\(branch)"], in: directory)
     }
 
     func deleteSelectedLocalRepository() {
@@ -1828,30 +1975,91 @@ final class AppStoreModel: NSObject, ObservableObject, ASWebAuthenticationPresen
         }
     }
 
+    /// 获取继承用户 shell 环境的 git 进程环境变量（包含 PATH、SSH_AUTH_SOCK 等）
+    private func gitEnvironment() -> [String: String] {
+        var env = ProcessInfo.processInfo.environment
+        // 确保 git 能找到 SSH key 和 credential helper
+        if let home = NSHomeDirectory() as String? {
+            env["HOME"] = home
+        }
+        // 设置 GIT_TERMINAL_PROMPT=0 禁止 git 弹出交互式密码输入
+        env["GIT_TERMINAL_PROMPT"] = "0"
+        // 设置 GIT_ASKPASS 为空，防止弹出 GUI 密码框
+        env["GIT_ASKPASS"] = ""
+        env["SSH_ASKPASS"] = ""
+        // 设置 LANG 避免编码问题
+        env["LANG"] = "en_US.UTF-8"
+        return env
+    }
+
+    /// 判断参数是否为网络操作（需要代理的 git 命令）
+    private func isNetworkGitCommand(_ arguments: [String]) -> Bool {
+        let networkVerbs: Set<String> = ["clone", "fetch", "pull", "push", "ls-remote"]
+        guard let verb = arguments.first else { return false }
+        return networkVerbs.contains(verb)
+    }
+
+    /// 判断是否需要网络代理
+    private func shouldUseProxy() -> Bool {
+        guard proxySettings.enabled, let url = proxySettings.normalizedURL else { return false }
+        return url.host != nil && url.port != nil
+    }
+
     private func runGit(_ arguments: [String], in directory: URL, allowFailureContaining allowedText: String? = nil) async throws -> String {
-        try await withCheckedThrowingContinuation { continuation in
+        let timeoutSeconds: TimeInterval = 120 // 网络操作 2 分钟超时
+        let localTimeoutSeconds: TimeInterval = 30  // 本地操作 30 秒超时
+
+        // 在 actor 隔离的闭包外预先准备数据
+        let isNetwork = isNetworkGitCommand(arguments)
+        let timeout = isNetwork ? timeoutSeconds : localTimeoutSeconds
+        let env = gitEnvironment()
+
+        // 使用传统 Process + waitUntilExit 方式，避免 Sendable 闭包问题
+        return try await Task.detached(priority: .userInitiated) {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-            process.arguments = gitArguments(arguments)
+            process.arguments = arguments
             process.currentDirectoryURL = directory
-            let pipe = Pipe()
-            process.standardOutput = pipe
-            process.standardError = pipe
-            process.terminationHandler = { process in
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                let output = String(data: data, encoding: .utf8) ?? ""
-                if process.terminationStatus == 0 || (allowedText.map { output.contains($0) } ?? false) {
-                    continuation.resume(returning: output)
-                } else {
-                    continuation.resume(throwing: NSError(domain: "Git", code: Int(process.terminationStatus), userInfo: [NSLocalizedDescriptionKey: output.isEmpty ? "git \(arguments.joined(separator: " ")) failed" : output]))
+            process.environment = env
+
+            let outputPipe = Pipe()
+            let errorPipe = Pipe()
+            process.standardOutput = outputPipe
+            process.standardError = errorPipe
+
+            try process.run()
+
+            // 带超时的等待（在 detached task 中，可以使用同步 API）
+            let deadline = Date().addingTimeInterval(timeout)
+            while process.isRunning {
+                if Date() > deadline {
+                    process.terminate()
+                    // 等待进程真正结束
+                    process.waitUntilExit()
+                    let errData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                    let errStr = String(data: errData, encoding: .utf8) ?? ""
+                    let msg = isNetwork
+                        ? "Git 网络操作超时（\(Int(timeout))秒）。\n请检查网络连接或代理设置。\n\(errStr)"
+                        : "Git 本地操作超时（\(Int(timeout))秒）。\n\(errStr)"
+                    throw NSError(domain: "Git", code: -1, userInfo: [NSLocalizedDescriptionKey: msg])
                 }
+                usleep(50_000) // 50ms
             }
-            do {
-                try process.run()
-            } catch {
-                continuation.resume(throwing: error)
+
+            let stdoutData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+            let stderrData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+            let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
+            let stderr = String(data: stderrData, encoding: .utf8) ?? ""
+            let output = stderr.isEmpty ? stdout : (stdout.isEmpty ? stderr : stdout + "\n" + stderr)
+
+            if process.terminationStatus == 0 || (allowedText.map { output.contains($0) } ?? false) {
+                return output
+            } else {
+                let cmd = arguments.joined(separator: " ")
+                let detail = output.isEmpty ? "git \(cmd) 执行失败（退出码: \(process.terminationStatus)）" : output
+                throw NSError(domain: "Git", code: Int(process.terminationStatus), userInfo: [NSLocalizedDescriptionKey: detail])
             }
-        }
+        }.value
     }
 
     private func gitCommandSucceeds(_ arguments: [String], in directory: URL) async -> Bool {
@@ -1871,6 +2079,24 @@ final class AppStoreModel: NSObject, ObservableObject, ASWebAuthenticationPresen
             throw NSError(domain: "Git", code: 1, userInfo: [NSLocalizedDescriptionKey: "无法解析当前 Git 分支，请确认仓库不处于 detached HEAD 状态。"])
         }
         return fallback
+    }
+
+    private func requireOriginRemote(in directory: URL) async throws -> String {
+        let remote = try await runGit(["remote", "get-url", "origin"], in: directory).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !remote.isEmpty else {
+            throw NSError(domain: "Git", code: 1, userInfo: [NSLocalizedDescriptionKey: "当前仓库没有配置 origin 远程地址，请先在 GitHub Desktop 或终端添加 remote。"])
+        }
+        return remote
+    }
+
+    private func hasUpstream(in directory: URL) async -> Bool {
+        do {
+            let upstream = try await runGit(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], in: directory)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return !upstream.isEmpty
+        } catch {
+            return false
+        }
     }
 
     private func gitStateSummary(branchLine: String, shortStatus: String) -> String {
@@ -1893,27 +2119,52 @@ final class AppStoreModel: NSObject, ObservableObject, ASWebAuthenticationPresen
     private func runGitSync(_ arguments: [String], in directory: URL) throws -> String {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        process.arguments = gitArguments(arguments)
+        process.arguments = arguments
         process.currentDirectoryURL = directory
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
+        process.environment = gitEnvironment()
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+        process.standardOutput = outputPipe
+        process.standardError = errorPipe
         try process.run()
         process.waitUntilExit()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        let output = String(data: data, encoding: .utf8) ?? ""
+        let stdoutData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        let stderrData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+        let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
+        let stderr = String(data: stderrData, encoding: .utf8) ?? ""
+        let output = stderr.isEmpty ? stdout : (stdout.isEmpty ? stderr : stdout + "\n" + stderr)
         if process.terminationStatus == 0 { return output }
         throw NSError(domain: "Git", code: Int(process.terminationStatus), userInfo: [NSLocalizedDescriptionKey: output])
     }
 
     private func resolvedRemoteFullName(for local: LocalRepository) async throws -> String {
         if local.fullName.contains("/") { return local.fullName }
-        let directory = URL(fileURLWithPath: local.path, isDirectory: true)
+        return try await resolvedRemoteFullNameFromGit(in: URL(fileURLWithPath: local.path, isDirectory: true))
+    }
+
+    private func resolvedRemoteFullNameFromGit(in directory: URL) async throws -> String {
         let remoteURL = try await runGit(["remote", "get-url", "origin"], in: directory).trimmingCharacters(in: .whitespacesAndNewlines)
         if let fullName = parseGitHubFullName(from: remoteURL) { return fullName }
         throw NSError(domain: "Git", code: 1, userInfo: [
             NSLocalizedDescriptionKey: "无法从 git remote origin 解析 GitHub 仓库地址，请确认远程地址是 github.com/owner/repo。"
         ])
+    }
+
+    private func isAuthenticationError(_ message: String) -> Bool {
+        let lowercased = message.lowercased()
+        return lowercased.contains("authentication failed") ||
+            lowercased.contains("could not read username") ||
+            lowercased.contains("could not read from remote") ||
+            lowercased.contains("permission denied") ||
+            lowercased.contains("repository not found") ||
+            lowercased.contains("remote: not found")
+    }
+
+    private func isNonFastForwardError(_ message: String) -> Bool {
+        let lowercased = message.lowercased()
+        return lowercased.contains("non-fast-forward") ||
+            lowercased.contains("fetch first") ||
+            lowercased.contains("rejected") && lowercased.contains("behind")
     }
 
     private func parseGitHubFullName(from remoteURL: String) -> String? {
@@ -1942,24 +2193,54 @@ final class AppStoreModel: NSObject, ObservableObject, ASWebAuthenticationPresen
     }
 
     private func friendlyGitSyncError(_ message: String) -> String {
-        if message.contains("Repository not found") || message.contains("remote: Not Found") {
-            return "GitHub 仓库不可访问。请确认 GitHub App 已安装到该账号/仓库，并开启 Repository contents 读写权限；如果是私有仓库，需要重新授权后再同步。"
+        let lowercased = message.lowercased()
+
+        // 认证相关错误
+        if lowercased.contains("could not read from remote") || lowercased.contains("permission denied") || lowercased.contains("authentication failed") {
+            return "GitHub 认证失败。请尝试以下方法：\n1. 在 OpenHub 中重新登录 GitHub\n2. 确认终端中 git 可以正常 push（运行 git push 测试）\n3. 如果是 SSH 方式，检查 SSH key 是否配置正确"
         }
-        if message.contains("index.lock") {
-            return "Git 仓库存在锁文件，可能是上次同步中断导致。OpenHub 已会在下次同步前清理本地 stale lock，请稍后再试。"
+
+        // 网络连接错误
+        if lowercased.contains("could not resolve host") || lowercased.contains("name or service not known") {
+            return "无法解析 github.com 域名。请检查 DNS 或网络连接。"
         }
-        if message.contains("github.com") && message.contains("443") {
-            return "已提交到本地，但连接 github.com:443 失败，暂时没有推送到 GitHub。请检查网络或代理设置后重试。"
+        if lowercased.contains("connection refused") || lowercased.contains("connection reset") {
+            return "连接 github.com 被拒绝或重置。可能需要配置代理或检查防火墙设置。"
         }
-        if message.contains("non-fast-forward") || message.contains("fetch first") {
-            return "远端有新的提交。新版同步会先 pull --rebase --autostash，再推送当前分支；请重试或手动处理 rebase 冲突。"
+        if lowercased.contains("operation timed out") || lowercased.contains("超时") {
+            return "连接 github.com 超时。请检查网络状况，或尝试在终端中先运行 git push 测试连通性。"
         }
-        return message
+        if lowercased.contains("443") || lowercased.contains("port 443") {
+            return "连接 github.com:443 失败。本地改动已保存，但推送失败。\n请检查：\n1. 网络是否正常\n2. 是否需要配置代理\n3. 在终端中运行 git push origin 测试"
+        }
+
+        // 仓库访问错误
+        if lowercased.contains("repository not found") || lowercased.contains("remote: not found") {
+            return "GitHub 仓库不可访问。\n请确认：\n1. GitHub App 已安装到该账号/仓库\n2. 已开启 Repository contents 读写权限\n3. 私有仓库需要重新授权"
+        }
+
+        // 锁文件
+        if lowercased.contains("index.lock") {
+            return "Git 仓库存在锁文件，可能是上次操作中断导致。请稍后重试，或手动删除 .git/index.lock 文件。"
+        }
+
+        // 冲突相关
+        if lowercased.contains("non-fast-forward") || lowercased.contains("fetch first") || lowercased.contains("rebase") || lowercased.contains("conflict") {
+            return "远端有新的提交与本地的提交冲突。\n请手动处理：\n1. 在终端中进入仓库目录\n2. 运行 git pull --rebase 解决冲突\n3. 再回到 OpenHub 同步"
+        }
+
+        // 默认返回原始错误信息（帮助用户排查）
+        let preview = message.count > 300 ? String(message.prefix(300)) + "..." : message
+        return preview
     }
 
+    /// 不再在 git 命令层面注入代理参数。
+    /// 代理配置通过 git 全局配置或环境变量处理，避免干扰本地 git 操作。
+    /// 如需使用代理访问 GitHub，请用户在终端中自行配置：
+    ///   git config --global http.proxy http://127.0.0.1:xxxx
+    ///   git config --global https.proxy http://127.0.0.1:xxxx
     private func gitArguments(_ arguments: [String]) -> [String] {
-        guard let proxyURL = proxySettings.normalizedURL?.absoluteString else { return arguments }
-        return ["-c", "http.proxy=\(proxyURL)", "-c", "https.proxy=\(proxyURL)"] + arguments
+        return arguments
     }
 
     func logout() {
@@ -1985,8 +2266,10 @@ final class AppStoreModel: NSObject, ObservableObject, ASWebAuthenticationPresen
             return
         }
         let jobID = UUID()
-        downloadJobs.insert(DownloadJob(id: jobID, appName: repository.displayName, assetName: asset.name, sourceName: selectedSource.name, progress: 0, state: .downloading, savedPath: nil, message: "准备下载", cancel: { [weak self] in
+        downloadJobs.insert(DownloadJob(id: jobID, appName: repository.displayName, assetName: asset.name, sourceName: selectedSource.name, originalURL: asset.browserDownloadURL, progress: 0, state: .downloading, savedPath: nil, partialFileURL: nil, bytesDownloaded: 0, message: "准备下载", cancel: { [weak self] in
             Task { @MainActor in self?.cancelDownload(jobID) }
+        }, retry: { [weak self] in
+            Task { await self?.retryDownload(asset: asset, repository: repository, oldJobID: jobID) }
         }), at: 0)
         do {
             status = "正在下载 \(asset.name)..."
@@ -2015,16 +2298,33 @@ final class AppStoreModel: NSObject, ObservableObject, ASWebAuthenticationPresen
                 updateDownloadJob(jobID, progress: 0, state: .cancelled, savedPath: nil, message: "用户已取消下载")
                 status = "已取消下载：\(asset.name)"
             } else {
-                updateDownloadJob(jobID, progress: 0, state: .failed, savedPath: nil, message: error.localizedDescription)
+                let nsErr = error as NSError
+                let completedBytes = downloadTasks[jobID]?.countOfBytesReceived ?? 0
+                var partialURL: URL? = nil
+                if completedBytes > 1024 {
+                    let partialsDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+                        .appendingPathComponent("OpenHubPartialDownloads", isDirectory: true)
+                    try? FileManager.default.createDirectory(at: partialsDir, withIntermediateDirectories: true)
+                    partialURL = partialsDir.appendingPathComponent("\(jobID.uuidString).partial")
+                }
+                let failMsg = completedBytes > 1024
+                    ? "下载失败（已下载 " + ByteCountFormatter.string(fromByteCount: completedBytes, countStyle: .file) + "，可右键重试）：" + error.localizedDescription
+                    : "下载失败：" + error.localizedDescription
+                updateDownloadJob(jobID, progress: jobProgress(jobID), state: .failed, savedPath: nil, partialFileURL: partialURL, bytesDownloaded: completedBytes, message: failMsg)
                 status = "下载失败，建议切换 GitHub 原始源重试：\(error.localizedDescription)"
             }
         }
     }
 
-    private func downloadFile(from url: URL, jobID: UUID) async throws -> (URL, URLResponse) {
+    private func downloadFile(from url: URL, jobID: UUID, resumeFromBytes: Int64 = 0) async throws -> (URL, URLResponse) {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
-                let task = URLSession.shared.downloadTask(with: url) { tempURL, response, error in
+                var request = URLRequest(url: url)
+                if resumeFromBytes > 0 {
+                    request.setValue("bytes=\(resumeFromBytes)-", forHTTPHeaderField: "Range")
+                    request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+                }
+                let task = URLSession.shared.downloadTask(with: request) { tempURL, response, error in
                     Task { @MainActor in self.downloadTasks.removeValue(forKey: jobID) }
                     if let error {
                         continuation.resume(throwing: error)
@@ -2058,11 +2358,13 @@ final class AppStoreModel: NSObject, ObservableObject, ASWebAuthenticationPresen
         }
     }
 
-    private func updateDownloadJob(_ id: UUID, progress: Double, state: DownloadJob.State, savedPath: String?, message: String) {
+    private func updateDownloadJob(_ id: UUID, progress: Double, state: DownloadJob.State, savedPath: String?, partialFileURL: URL? = nil, bytesDownloaded: Int64 = 0, message: String) {
         guard let index = downloadJobs.firstIndex(where: { $0.id == id }) else { return }
         downloadJobs[index].progress = progress
         downloadJobs[index].state = state
         if let savedPath { downloadJobs[index].savedPath = savedPath }
+        if let partialFileURL { downloadJobs[index].partialFileURL = partialFileURL }
+        if bytesDownloaded > 0 || state == .failed { downloadJobs[index].bytesDownloaded = bytesDownloaded }
         downloadJobs[index].message = message
     }
 
@@ -2084,6 +2386,60 @@ final class AppStoreModel: NSObject, ObservableObject, ASWebAuthenticationPresen
         downloads.removeAll { $0.id == record.id }
         storage.save(downloads, key: "downloads")
         status = removeFile ? "已删除下载记录和本地文件" : "已删除下载记录"
+    }
+
+    private func jobProgress(_ jobID: UUID) -> Double {
+        guard let index = downloadJobs.firstIndex(where: { $0.id == jobID }) else { return 0 }
+        return downloadJobs[index].progress
+    }
+
+    func retryDownload(asset: ReleaseAsset, repository: Repository, oldJobID: UUID) async {
+        guard let sourceURL = selectedSource.resolvedURL(for: asset.browserDownloadURL) else {
+            status = "下载源 URL 无效"
+            return
+        }
+        guard let oldJob = downloadJobs.first(where: { $0.id == oldJobID }) else { return }
+
+        let newJobID = UUID()
+        let resumeBytes = oldJob.bytesDownloaded > 1024 ? oldJob.bytesDownloaded : 0
+
+        downloadJobs.insert(DownloadJob(id: newJobID, appName: repository.displayName, assetName: asset.name, sourceName: selectedSource.name, originalURL: asset.browserDownloadURL, progress: 0, state: .downloading, savedPath: nil, partialFileURL: nil, bytesDownloaded: 0, message: resumeBytes > 0 ? "断点续传中（已下载 " + ByteCountFormatter.string(fromByteCount: resumeBytes, countStyle: .file) + "）" : "重新下载中", cancel: { [weak self] in
+            Task { @MainActor in self?.cancelDownload(newJobID) }
+        }, retry: { [weak self] in
+            Task { await self?.retryDownload(asset: asset, repository: repository, oldJobID: newJobID) }
+        }), at: 0)
+
+        do {
+            status = "正在\(resumeBytes > 0 ? "续传" : "重新")下载 \(asset.name)..."
+            downloadProgress = resumeBytes > 0 ? min(Double(resumeBytes) / Double(resumeBytes + 10_000_000), 0.9) : 0.05
+            let (tempURL, _) = try await downloadFile(from: sourceURL, jobID: newJobID, resumeFromBytes: resumeBytes)
+            let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("OpenHub", isDirectory: true)
+            try FileManager.default.createDirectory(at: downloadsURL, withIntermediateDirectories: true)
+            let destination = downloadsURL.appendingPathComponent(asset.name)
+            if FileManager.default.fileExists(atPath: destination.path) {
+                try FileManager.default.removeItem(at: destination)
+            }
+            try FileManager.default.moveItem(at: tempURL, to: destination)
+            downloadProgress = 1
+            let checksum = try sha256(of: destination)
+            let record = DownloadRecord(id: UUID(), appName: repository.displayName, assetName: asset.name, sourceName: selectedSource.name, originalURL: asset.browserDownloadURL, savedPath: destination.path, downloadedAt: Date(), checksum: checksum)
+            downloads.insert(record, at: 0)
+            storage.save(downloads, key: "downloads")
+            updateDownloadJob(newJobID, progress: 1, state: .completed, savedPath: destination.path, message: "下载完成，可打开安装")
+            downloadTasks.removeValue(forKey: newJobID)
+            deleteDownloadJob(oldJobID)
+            status = "下载完成：\(asset.name)"
+        } catch {
+            downloadProgress = 0
+            downloadTasks.removeValue(forKey: newJobID)
+            if (error as NSError).code == NSURLErrorCancelled {
+                updateDownloadJob(newJobID, progress: 0, state: .cancelled, savedPath: nil, message: "用户已取消下载")
+            } else {
+                updateDownloadJob(newJobID, progress: 0, state: .failed, savedPath: nil, message: error.localizedDescription)
+                status = "下载失败：\(error.localizedDescription)"
+            }
+        }
     }
 
     private func sha256(of url: URL) throws -> String {
@@ -2802,6 +3158,12 @@ struct DownloadJobRow: View {
                     job.cancel?()
                 }
             }
+            if job.state == .failed {
+                Button("重新下载") {
+                    job.retry?()
+                }
+                .buttonStyle(.borderedProminent)
+            }
             if let path = job.savedPath, job.state == .completed {
                 Button("安装") {
                     NSWorkspace.shared.open(URL(fileURLWithPath: path))
@@ -2821,6 +3183,26 @@ struct DownloadJobRow: View {
         .padding(12)
         .background(Color(nsColor: .controlBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: 10))
+        .contextMenu {
+            if job.state == .failed {
+                Button {
+                    job.retry?()
+                } label: {
+                    Label(job.bytesDownloaded > 1024 ? "重新下载（断点续传）" : "重新下载", systemImage: "arrow.clockwise")
+                }
+                Divider()
+            }
+            if let path = job.savedPath, job.state == .completed {
+                Button("打开文件") { NSWorkspace.shared.open(URL(fileURLWithPath: path)) }
+                Button("在 Finder 中显示") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
+                Divider()
+            }
+            Button(role: .destructive) {
+                model.deleteDownloadJob(job.id)
+            } label: {
+                Label("删除", systemImage: "trash")
+            }
+        }
     }
 }
 
@@ -3360,6 +3742,8 @@ struct CodeWorkspaceView: View {
 
 struct GitBottomPanel: View {
     @EnvironmentObject private var model: AppStoreModel
+    @State private var showDiagnostics = false
+    @State private var diagnosticText = ""
 
     var body: some View {
         VStack(spacing: 10) {
@@ -3379,6 +3763,19 @@ struct GitBottomPanel: View {
                 Text(model.gitSyncStateText)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(model.gitSyncStateText == "工作区干净" ? .green : .orange)
+                Button {
+                    Task {
+                        if let local = model.selectedLocalRepository {
+                            diagnosticText = await model.diagnoseGitRemote(for: local)
+                            showDiagnostics = true
+                        }
+                    }
+                } label: {
+                    Image(systemName: "stethoscope")
+                        .font(.caption)
+                }
+                .help("诊断 Git 远程连接")
+                .disabled(model.selectedLocalRepository == nil)
             }
             HStack(alignment: .top, spacing: 12) {
                 GitInfoCard(title: "状态", text: model.gitStatusText.isEmpty ? "暂无未提交变更" : model.gitStatusText, color: .blue)
@@ -3407,6 +3804,32 @@ struct GitBottomPanel: View {
         }
         .padding(12)
         .background(Color(nsColor: .controlBackgroundColor))
+        .sheet(isPresented: $showDiagnostics) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("Git 远程诊断")
+                        .font(.headline)
+                    Spacer()
+                    Button("关闭") { showDiagnostics = false }
+                }
+                ScrollView {
+                    Text(diagnosticText)
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(minHeight: 200, maxHeight: 400)
+                .padding(12)
+                .background(Color(nsColor: .textBackgroundColor))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                Text("提示：如果诊断显示网络连通性失败，请在终端中运行 git push 测试，确认终端可以正常访问 GitHub。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding()
+            .frame(width: 520, height: 420)
+        }
     }
 }
 

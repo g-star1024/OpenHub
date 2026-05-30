@@ -11,6 +11,7 @@ OpenHub 是一个免费开源的桌面客户端，用于发现、收藏、查看
 - GitHub 仓库搜索与仓库名精确排序
 - 推荐页首屏加载热门项目，并滚动加载至前 100
 - 启动后后台预加载各分类首屏内容
+- 分类预加载失败时不会标记为已完成，切换到该分类会自动重试加载
 - 中文软件分类体系
 - 项目列表与详情页展示 GitHub owner avatar
 - 仓库文档、Release 信息与下载资源展示
@@ -36,7 +37,7 @@ OpenHub 是一个免费开源的桌面客户端，用于发现、收藏、查看
 - 代理设置，可加速 GitHub API 与 git clone / push
 - 设置中心支持下载运行错误报告，便于反馈和排查问题
 - 设置中心支持二次确认后清空缓存，包括本机配置、收藏、下载记录、仓库列表缓存、分类缓存、搜索结果和 Keychain 登录信息
-- 代码频道同步会清理 stale index.lock、自动 pull --rebase --autostash，再推送当前分支，并显示 ahead/behind 状态
+- 代码频道同步会优先复用本机 Git 凭据直接 push，只有远端非快进时才自动 rebase 重试，并显示 ahead/behind 状态
 - GitHub App 登录，session id 和访问令牌存储在 macOS Keychain
 - 界面语言设置，支持简体中文和 English
 - 标准 macOS `.icns` 应用图标
@@ -137,6 +138,7 @@ OpenHub is a free and open-source desktop client for discovering, collecting, vi
 - GitHub repository search with repository-name-aware ranking
 - Recommended page loads popular projects first and lazy-loads up to 100
 - Background preloading for category first pages
+- Categories that fail to preload are retried automatically when opened
 - Chinese-friendly software categories
 - GitHub owner avatars in project lists and detail views
 - Repository docs, Release information, and downloadable assets
@@ -163,7 +165,7 @@ OpenHub is a free and open-source desktop client for discovering, collecting, vi
 - Proxy settings for GitHub API and git clone / push
 - Settings can export runtime error reports for troubleshooting
 - Settings can clear app cache after confirmation, including local settings, favorites, download history, repository caches, category caches, search results, and Keychain login entries
-- Code sync clears stale index.lock, pulls with rebase/autostash, pushes the current branch, and reports ahead/behind status
+- Code sync reuses local Git credentials for a native push first, rebases only on non-fast-forward errors, and reports ahead/behind status
 - GitHub App login with session id and access token stored in macOS Keychain
 - Interface language settings for Simplified Chinese and English
 - Standard macOS `.icns` app icon
