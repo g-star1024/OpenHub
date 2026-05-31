@@ -429,8 +429,8 @@ enum L10n {
         "language": "语言",
         "interfaceLanguage": "界面语言",
         "saveSettings": "保存设置",
-        "githubToken": "GitHub App 登录",
-        "tokenKeychain": "OpenHub 仅使用 GitHub App 登录；session id 和 access token 会保存在本机 macOS Keychain。",
+        "githubToken": "GitHub OAuth 登录",
+        "tokenKeychain": "OpenHub 仅使用 GitHub OAuth 登录；session id 和 access token 会保存在本机 macOS Keychain。",
         "downloadSource": "下载源",
         "defaultDownloadSource": "默认下载源",
         "localizationNote": "当前支持简体中文和 English。仓库原始内容不会被强制翻译。",
@@ -496,8 +496,8 @@ enum L10n {
         "language": "Language",
         "interfaceLanguage": "Interface Language",
         "saveSettings": "Save Settings",
-        "githubToken": "GitHub App Sign In",
-        "tokenKeychain": "OpenHub only uses GitHub App sign-in. The session id and access token are stored locally in macOS Keychain.",
+        "githubToken": "GitHub OAuth Sign In",
+        "tokenKeychain": "OpenHub only uses GitHub OAuth sign-in. The session id and access token are stored locally in macOS Keychain.",
         "downloadSource": "Download Source",
         "defaultDownloadSource": "Default Source",
         "localizationNote": "Supports Simplified Chinese and English. Repository content is not force-translated.",
@@ -700,7 +700,7 @@ final class GitHubClient {
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        request.setValue("OpenHub/1.0.0 (GitHub App 3910295)", forHTTPHeaderField: "User-Agent")
+        request.setValue("OpenHub/1.0.0 (GitHub OAuth)", forHTTPHeaderField: "User-Agent")
         request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = body
@@ -717,8 +717,8 @@ final class GitHubClient {
             if http.statusCode == 403, url.path.contains("/user/starred") {
                 let isResourceError = message.contains("Resource not accessible") || message.contains("not authorized")
                 let detail = isResourceError
-                    ? "GitHub App 的 Starring 权限未生效。请前往 https://github.com/settings/installations 找到 OpenHub 并点击「Configure permissions」确认 Starring 权限为 Read & write，然后重新授权安装该 App。"
-                    : "请确认 GitHub App 已开启 Starring 读写权限（GitHub App Settings → Permissions → Starring → Read and write），修改权限后需重新授权登录。\(message.isEmpty ? "" : " GitHub: \(message)")"
+                    ? "OAuth App 缺少 Star 权限。请确认 OAuth App 授权 scope 包含 public_repo，然后退出登录并重新授权。"
+                    : "请确认 OAuth App 授权 scope 包含 public_repo，修改 OAuth App 配置或后端 scope 后需退出登录并重新授权。\(message.isEmpty ? "" : " GitHub: \(message)")"
                 throw NSError(domain: "GitHub", code: http.statusCode, userInfo: [
                     NSLocalizedDescriptionKey: detail
                 ])
@@ -1226,7 +1226,7 @@ final class AppStoreModel: NSObject, ObservableObject, ASWebAuthenticationPresen
             if nsError.code == 403 {
                 status = "本地收藏已保存，GitHub Star 同步失败：\(error.localizedDescription)"
             } else if nsError.code == 401 || nsError.code == 404 {
-                status = "GitHub Star 同步失败（认证过期），请重新登录 GitHub App"
+                status = "GitHub Star 同步失败（认证过期），请重新登录 GitHub"
             } else {
                 status = "本地收藏已保存，GitHub Star 暂时无法同步：\(error.localizedDescription)"
             }
@@ -1285,7 +1285,7 @@ final class AppStoreModel: NSObject, ObservableObject, ASWebAuthenticationPresen
         let alert = NSAlert()
         alert.messageText = "清空 OpenHub 缓存？"
         alert.informativeText = """
-        将清空本机配置、收藏列表、下载记录、本地仓库列表缓存、分类缓存、搜索结果、GitHub App session id、GitHub access token，以及 Keychain 中的 GitHub App 登录信息。
+        将清空本机配置、收藏列表、下载记录、本地仓库列表缓存、分类缓存、搜索结果、GitHub OAuth session id、GitHub access token，以及 Keychain 中的 GitHub OAuth 登录信息。
 
         不会删除已下载到磁盘的文件，也不会删除本地克隆仓库目录。
         """
@@ -1459,7 +1459,7 @@ final class AppStoreModel: NSObject, ObservableObject, ASWebAuthenticationPresen
 
     func completeGitHubAppLogin(sessionID: String, isRestoring: Bool = false) async {
         isAccountLoading = true
-        status = isRestoring ? "正在恢复 GitHub App 登录..." : "正在完成 GitHub App 登录..."
+        status = isRestoring ? "正在恢复 GitHub 登录..." : "正在完成 GitHub 登录..."
         defer { isAccountLoading = false }
         do {
             let session = try await client.githubAppSession(sessionID: sessionID)
@@ -1469,12 +1469,12 @@ final class AppStoreModel: NSObject, ObservableObject, ASWebAuthenticationPresen
             try keychain.save(session.sessionId, account: "github-session-id")
             try keychain.save(session.accessToken, account: "github-app-access-token")
             keychain.delete(account: "github-token")
-            status = "已通过 GitHub App 登录：\(githubUser?.login ?? session.login)"
+            status = "已通过 GitHub 登录：\(githubUser?.login ?? session.login)"
             await refreshAccountData()
             section = .account
         } catch {
             if !isRestoring {
-                status = "GitHub App 登录失败：\(error.localizedDescription)"
+                status = "GitHub OAuth 登录失败：\(error.localizedDescription)"
             }
         }
     }
@@ -1762,8 +1762,8 @@ final class AppStoreModel: NSObject, ObservableObject, ASWebAuthenticationPresen
                let remoteFullName = try? await resolvedRemoteFullNameFromGit(in: directory),
                !activeGitHubToken.isEmpty {
                 syncProgress = 0.75
-                syncMessage = "系统 Git 凭据失败，正在使用 GitHub App 登录重试..."
-                try await pushUsingGitHubAppToken(directory: directory, branch: branch, remoteFullName: remoteFullName, token: activeGitHubToken)
+                syncMessage = "系统 Git 凭据失败，正在使用 GitHub 登录凭据重试..."
+                try await pushUsingGitHubOAuthToken(directory: directory, branch: branch, remoteFullName: remoteFullName, token: activeGitHubToken)
                 return
             }
 
@@ -1779,7 +1779,7 @@ final class AppStoreModel: NSObject, ObservableObject, ASWebAuthenticationPresen
         }
     }
 
-    private func pushUsingGitHubAppToken(directory: URL, branch: String, remoteFullName: String, token: String) async throws {
+    private func pushUsingGitHubOAuthToken(directory: URL, branch: String, remoteFullName: String, token: String) async throws {
         let encodedToken = token.addingPercentEncoding(withAllowedCharacters: .urlPasswordAllowed) ?? token
         let tokenURL = "https://x-access-token:\(encodedToken)@github.com/\(remoteFullName).git"
         _ = try await runGit(["push", tokenURL, "HEAD:refs/heads/\(branch)"], in: directory)
@@ -2216,7 +2216,7 @@ final class AppStoreModel: NSObject, ObservableObject, ASWebAuthenticationPresen
 
         // 仓库访问错误
         if lowercased.contains("repository not found") || lowercased.contains("remote: not found") {
-            return "GitHub 仓库不可访问。\n请确认：\n1. GitHub App 已安装到该账号/仓库\n2. 已开启 Repository contents 读写权限\n3. 私有仓库需要重新授权"
+            return "GitHub 仓库不可访问。\n请确认：\n1. OAuth App 已获得目标仓库访问权限\n2. 本机 Git 凭据可以访问该仓库\n3. 私有仓库需要使用 repo scope 重新授权"
         }
 
         // 锁文件
@@ -3269,12 +3269,12 @@ struct SettingsView: View {
         Form {
             Section("GitHub") {
                 HStack {
-                    Text(model.isLoggedIn ? "已通过 GitHub App 登录" : "未登录")
+                    Text(model.isLoggedIn ? "已通过 GitHub 登录" : "未登录")
                     Spacer()
                     Button {
                         model.startGitHubAppLogin()
                     } label: {
-                        Label(model.isLoggedIn ? "重新登录" : "使用 GitHub App 登录", systemImage: "person.crop.circle.badge.checkmark")
+                        Label(model.isLoggedIn ? "重新登录" : "使用 GitHub OAuth 登录", systemImage: "person.crop.circle.badge.checkmark")
                     }
                 }
                 Text(model.text("tokenKeychain"))
@@ -3351,7 +3351,7 @@ struct SettingsView: View {
             }
 
             Section("缓存") {
-                Text("清空本机配置、收藏列表、下载记录、本地仓库列表缓存、分类缓存、搜索结果、GitHub App session id、GitHub access token 和 Keychain 登录信息。不会删除已下载文件或本地克隆仓库目录。")
+                Text("清空本机配置、收藏列表、下载记录、本地仓库列表缓存、分类缓存、搜索结果、GitHub OAuth session id、GitHub access token 和 Keychain 登录信息。不会删除已下载文件或本地克隆仓库目录。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Button(role: .destructive) {
@@ -3482,7 +3482,7 @@ struct AccountView: View {
                             Button {
                                 model.startGitHubAppLogin()
                             } label: {
-                                Label("使用 GitHub App 登录", systemImage: "person.crop.circle.badge.checkmark")
+                                Label("使用 GitHub OAuth 登录", systemImage: "person.crop.circle.badge.checkmark")
                                     .frame(maxWidth: .infinity)
                             }
                             .buttonStyle(.borderedProminent)

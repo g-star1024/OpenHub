@@ -21,8 +21,8 @@ OpenHub 是一个免费开源的桌面客户端，用于发现、收藏、查看
 - 登录 GitHub 后收藏同步 GitHub Star
 - 分类与搜索列表保持浏览选择体验，不展示打开链接和 Star 操作按钮
 - 收藏列表仓库卡片点击后直接打开 GitHub 仓库页面
-- GitHub App 登录使用 Starring 读写权限同步 Star；权限不足时会保留本地收藏
-- 仅保留 GitHub App 登录，避免历史凭据与 App session 权限冲突
+- GitHub OAuth 登录使用 Starring 读写权限同步 Star；权限不足时会保留本地收藏
+- 仅保留 GitHub OAuth 登录，避免历史凭据与 OAuth session 权限冲突
 - GitHub 登录、个人中心、我的仓库与星标仓库
 - 个人中心“我的仓库”和“星标仓库”使用表格切换，默认各加载 20 个并滚动加载更多
 - 个人中心列表使用独立滚动区域，避免未滚动时连续后台分页
@@ -38,12 +38,12 @@ OpenHub 是一个免费开源的桌面客户端，用于发现、收藏、查看
 - 设置中心支持下载运行错误报告，便于反馈和排查问题
 - 设置中心支持二次确认后清空缓存，包括本机配置、收藏、下载记录、仓库列表缓存、分类缓存、搜索结果和 Keychain 登录信息
 - 代码频道同步会优先复用本机 Git 凭据直接 push，只有远端非快进时才自动 rebase 重试，并显示 ahead/behind 状态
-- GitHub App 登录，session id 和访问令牌存储在 macOS Keychain
+- GitHub OAuth 登录，session id 和访问令牌存储在 macOS Keychain
 - 界面语言设置，支持简体中文和 English
 - 标准 macOS `.icns` 应用图标
 - Windows/Tauri 版本源码，面向 Windows 10 和 Windows 11
 - Windows/Tauri 已配置应用窗口、安装包和快捷方式图标
-- Cloudflare Worker + KV + D1 后端，用于 GitHub App 登录
+- Cloudflare Worker + KV + D1 后端，用于 GitHub OAuth 登录
 
 ## 系统要求
 
@@ -84,9 +84,11 @@ Windows 安装包需要在 Windows 10/11 或 GitHub Actions `windows-latest` 环
 
 ## Cloudflare 后端
 
-Cloudflare 后端位于 `backend/cloudflare`，用于 GitHub App 登录。它使用 Workers 承载 OAuth 回调，KV 保存短期 state，D1 保存登录 session。
+Cloudflare 后端位于 `backend/cloudflare`，用于 GitHub OAuth 登录。它使用 Workers 承载 OAuth 回调，KV 保存短期 state，D1 保存登录 session。
 
 详见 [backend/cloudflare](backend/cloudflare)。
+
+当前 OAuth App Client ID：`Ov23li0G0q2gQuxSPoCF`。Worker 默认请求 `read:user public_repo`，用于读取用户信息、读取公开仓库和同步公开仓库 Star。
 
 ## 分发说明
 
@@ -98,9 +100,9 @@ OpenHub 不重新分发第三方二进制文件。下载资源来自项目维护
 
 OpenHub 是本地优先的开源桌面客户端。应用不会内置第三方统计 SDK，不会主动收集、出售或上传用户的个人数据。
 
-OpenHub 会在本机保存必要配置，包括界面语言、下载源、代理设置、本地仓库路径、收藏列表、下载记录、GitHub App session id 和 GitHub 访问令牌。macOS 版本会将 GitHub session id 和访问令牌保存到系统 Keychain；其他普通配置保存在本机用户环境中。
+OpenHub 会在本机保存必要配置，包括界面语言、下载源、代理设置、本地仓库路径、收藏列表、下载记录、GitHub OAuth session id 和 GitHub 访问令牌。macOS 版本会将 GitHub session id 和访问令牌保存到系统 Keychain；其他普通配置保存在本机用户环境中。
 
-OpenHub 会在用户主动使用相关功能时请求 GitHub API，例如搜索仓库、读取 Release、登录 GitHub、读取个人仓库、同步 Star、Fork、克隆仓库或推送本地代码。GitHub 请求受 GitHub 隐私政策和账号权限控制。OpenHub 的 Cloudflare 后端仅用于 GitHub App OAuth 回调和 session 中转；OpenHub 不会把仓库代码或下载记录发送到 OpenHub 自有服务器。
+OpenHub 会在用户主动使用相关功能时请求 GitHub API，例如搜索仓库、读取 Release、登录 GitHub、读取个人仓库、同步 Star、Fork、克隆仓库或推送本地代码。GitHub 请求受 GitHub 隐私政策和账号权限控制。OpenHub 的 Cloudflare 后端仅用于 GitHub OAuth 回调和 session 中转；OpenHub 不会把仓库代码或下载记录发送到 OpenHub 自有服务器。
 
 下载文件来自项目维护者发布的 GitHub Release Assets 或用户配置的下载加速源。若用户启用代理或自定义加速源，请自行确认该服务的可信度和隐私政策。
 
@@ -149,8 +151,8 @@ OpenHub is a free and open-source desktop client for discovering, collecting, vi
 - Favorite repository cards can open the corresponding GitHub repository page
 - Category and search lists keep a clean browsing/selection experience without inline open-link or Star buttons
 - Favorite cards open the corresponding GitHub repository directly when clicked
-- GitHub App login uses Starring read/write permission for Star sync and keeps local favorites if remote sync is denied
-- GitHub App sign-in is the only authentication mode, avoiding conflicts between fallback tokens and App sessions
+- GitHub OAuth sign-in requests `read:user public_repo` for public repository Star sync and keeps local favorites if remote sync is denied
+- GitHub OAuth sign-in is the only authentication mode, avoiding conflicts between fallback tokens and OAuth sessions
 - GitHub sign-in, account center, owned repositories, and starred repositories
 - Account repositories and starred repositories use a switchable table, load 20 items initially, and lazy-load more on scroll
 - Account tables use an isolated scroll area to avoid runaway pagination before the user scrolls
@@ -166,12 +168,12 @@ OpenHub is a free and open-source desktop client for discovering, collecting, vi
 - Settings can export runtime error reports for troubleshooting
 - Settings can clear app cache after confirmation, including local settings, favorites, download history, repository caches, category caches, search results, and Keychain login entries
 - Code sync reuses local Git credentials for a native push first, rebases only on non-fast-forward errors, and reports ahead/behind status
-- GitHub App login with session id and access token stored in macOS Keychain
+- GitHub OAuth sign-in with session id and access token stored in macOS Keychain
 - Interface language settings for Simplified Chinese and English
 - Standard macOS `.icns` app icon
 - Windows/Tauri source for Windows 10 and Windows 11
 - Windows/Tauri config includes app-window, installer, and shortcut icons
-- Cloudflare Worker + KV + D1 backend for GitHub App login
+- Cloudflare Worker + KV + D1 backend for GitHub OAuth sign-in
 
 ## Requirements
 
@@ -212,9 +214,11 @@ Windows installers must be built on Windows 10/11 or GitHub Actions `windows-lat
 
 ## Cloudflare Backend
 
-The Cloudflare backend lives in `backend/cloudflare` and powers GitHub App login. It uses Workers for OAuth callbacks, KV for short-lived state, and D1 for login sessions.
+The Cloudflare backend lives in `backend/cloudflare` and powers GitHub OAuth sign-in. It uses Workers for OAuth callbacks, KV for short-lived state, and D1 for login sessions.
 
 See [backend/cloudflare](backend/cloudflare).
+
+Current OAuth App Client ID: `Ov23li0G0q2gQuxSPoCF`. The Worker requests `read:user public_repo` by default for user lookup, public repository access, and public repository Star sync.
 
 ## Distribution
 
@@ -226,9 +230,9 @@ The current packaging script uses ad-hoc signing for local testing and open-sour
 
 OpenHub is a local-first open-source desktop client. It does not include third-party analytics SDKs and does not proactively collect, sell, or upload personal data.
 
-OpenHub stores necessary local settings on the user's device, including interface language, download sources, proxy settings, local repository path, favorites, download history, GitHub App session id, and GitHub access token. The macOS app stores the GitHub session id and access token in the system Keychain; regular settings are stored in the local user environment.
+OpenHub stores necessary local settings on the user's device, including interface language, download sources, proxy settings, local repository path, favorites, download history, GitHub OAuth session id, and GitHub access token. The macOS app stores the GitHub session id and access token in the system Keychain; regular settings are stored in the local user environment.
 
-OpenHub calls GitHub APIs only when the user uses related features, such as repository search, Release lookup, GitHub sign-in, owned repository lookup, Star sync, Fork, clone, or pushing local code. GitHub requests are governed by GitHub's privacy policy and account permissions. OpenHub's Cloudflare backend is used only for GitHub App OAuth callback and session relay; OpenHub does not send repository code or download history to an OpenHub-owned server.
+OpenHub calls GitHub APIs only when the user uses related features, such as repository search, Release lookup, GitHub sign-in, owned repository lookup, Star sync, Fork, clone, or pushing local code. GitHub requests are governed by GitHub's privacy policy and account permissions. OpenHub's Cloudflare backend is used only for GitHub OAuth callback and session relay; OpenHub does not send repository code or download history to an OpenHub-owned server.
 
 Downloaded files come from GitHub Release Assets published by project maintainers or user-configured download mirrors/proxies. If users enable a proxy or custom mirror, they should verify that service's trustworthiness and privacy policy.
 

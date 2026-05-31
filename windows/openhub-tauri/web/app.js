@@ -45,8 +45,8 @@ const l10n = {
     releaseInfo: "版本信息",
     language: "语言",
     interfaceLanguage: "界面语言",
-    githubToken: "GitHub App 登录",
-    tokenNote: "OpenHub 仅使用 GitHub App 登录；session id 和访问令牌保存在当前 Windows 用户的 Tauri WebView 本地存储中。",
+    githubToken: "GitHub OAuth 登录",
+    tokenNote: "OpenHub 仅使用 GitHub OAuth 登录；session id 和访问令牌保存在当前 Windows 用户的 Tauri WebView 本地存储中。",
     downloadSource: "下载源",
     defaultDownloadSource: "默认下载源",
     saveSettings: "保存设置",
@@ -57,7 +57,7 @@ const l10n = {
     downloadErrors: "下载错误报告",
     clearErrors: "清空错误",
     clearCache: "清空缓存",
-    cacheNote: "清空本机配置、收藏、下载记录、仓库列表缓存、分类缓存、搜索结果和 GitHub App 登录信息；不会删除磁盘下载文件或本地克隆仓库。",
+    cacheNote: "清空本机配置、收藏、下载记录、仓库列表缓存、分类缓存、搜索结果和 GitHub OAuth 登录信息；不会删除磁盘下载文件或本地克隆仓库。",
     accountTable: "仓库",
     loadMore: "滚动加载更多，每次 20 个",
     noRuntimeErrors: "暂无运行错误",
@@ -120,8 +120,8 @@ const l10n = {
     releaseInfo: "Release",
     language: "Language",
     interfaceLanguage: "Interface Language",
-    githubToken: "GitHub App Sign In",
-    tokenNote: "OpenHub only uses GitHub App sign-in. The session id and access token are stored in the local Tauri WebView storage for the current Windows user.",
+    githubToken: "GitHub OAuth Sign In",
+    tokenNote: "OpenHub only uses GitHub OAuth sign-in. The session id and access token are stored in the local Tauri WebView storage for the current Windows user.",
     downloadSource: "Download Source",
     defaultDownloadSource: "Default Source",
     saveSettings: "Save Settings",
@@ -132,7 +132,7 @@ const l10n = {
     downloadErrors: "Download Error Report",
     clearErrors: "Clear Errors",
     clearCache: "Clear Cache",
-    cacheNote: "Clears local settings, favorites, downloads, repository list caches, category cache, search results, and GitHub App sign-in data. Downloaded files and local clones are not deleted.",
+    cacheNote: "Clears local settings, favorites, downloads, repository list caches, category cache, search results, and GitHub OAuth sign-in data. Downloaded files and local clones are not deleted.",
     accountTable: "Repositories",
     loadMore: "Scroll to load 20 more",
     noRuntimeErrors: "No runtime errors",
@@ -530,7 +530,7 @@ function startGitHubAppLogin() {
   returnURL.hash = "";
   const authURL = new URL(`${authBackendBaseURL}/auth/github/start`);
   authURL.searchParams.set("redirect_uri", returnURL.toString());
-  setStatus("正在打开 GitHub App 授权...");
+  setStatus("正在打开 GitHub OAuth 授权...");
   window.location.href = authURL.toString();
 }
 
@@ -546,7 +546,7 @@ async function completeGitHubAppLogin(sessionId) {
     await refreshAccountData();
     saveJson("openhub.user", state.user);
     state.view = "account";
-    setStatus(`GitHub App 登录成功：${state.user.login}`);
+    setStatus(`GitHub OAuth 登录成功：${state.user.login}`);
     const cleanURL = new URL(window.location.href);
     cleanURL.searchParams.delete("session_id");
     cleanURL.searchParams.delete("login");
@@ -555,7 +555,7 @@ async function completeGitHubAppLogin(sessionId) {
     render();
   } catch (error) {
     recordRuntimeError(error, "login");
-    setStatus(`GitHub App 登录失败：${error.message}`);
+    setStatus(`GitHub OAuth 登录失败：${error.message}`);
   }
 }
 
@@ -1077,7 +1077,7 @@ async function restoreGitHubAppLogin() {
   const sessionId = params.get("session_id") || state.githubSessionId;
   const error = params.get("error");
   if (error) {
-    setStatus(`GitHub App 登录失败：${error}`);
+    setStatus(`GitHub OAuth 登录失败：${error}`);
     return;
   }
   if (!sessionId) return;

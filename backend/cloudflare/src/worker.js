@@ -13,7 +13,13 @@ export default {
 
     try {
       if (url.pathname === "/health") {
-        return json({ ok: true, app: env.GITHUB_APP_NAME, appId: env.GITHUB_APP_ID }, corsHeaders);
+        return json({
+          ok: true,
+          app: env.GITHUB_OAUTH_APP_NAME || "OpenHub",
+          authType: "github_oauth_app",
+          clientId: env.GITHUB_CLIENT_ID,
+          scope: githubOAuthScope(env)
+        }, corsHeaders);
       }
 
       if (url.pathname === "/auth/github/start") {
@@ -47,6 +53,7 @@ async function startGithubAuth(url, env, headers) {
   const authURL = new URL(GITHUB_AUTHORIZE_URL);
   authURL.searchParams.set("client_id", env.GITHUB_CLIENT_ID);
   authURL.searchParams.set("state", state);
+  authURL.searchParams.set("scope", githubOAuthScope(env));
   return Response.redirect(authURL.toString(), 302);
 }
 
@@ -65,7 +72,7 @@ async function handleGithubCallback(url, env, headers) {
     headers: {
       "Accept": "application/json",
       "Content-Type": "application/json",
-      "User-Agent": `OpenHub GitHub App ${env.GITHUB_APP_ID}`
+      "User-Agent": "OpenHub OAuth"
     },
     body: JSON.stringify({
       client_id: env.GITHUB_CLIENT_ID,
@@ -82,7 +89,7 @@ async function handleGithubCallback(url, env, headers) {
     headers: {
       "Accept": "application/vnd.github+json",
       "Authorization": `Bearer ${token.access_token}`,
-      "User-Agent": `OpenHub GitHub App ${env.GITHUB_APP_ID}`,
+      "User-Agent": "OpenHub OAuth",
       "X-GitHub-Api-Version": "2022-11-28"
     }
   });
@@ -141,6 +148,10 @@ async function logout(request, env, headers) {
   if (!sessionId) return json({ error: "missing_session" }, headers, 401);
   await env.OPENHUB_DB.prepare("DELETE FROM github_sessions WHERE session_id = ?").bind(sessionId).run();
   return json({ ok: true }, headers);
+}
+
+function githubOAuthScope(env) {
+  return env.GITHUB_OAUTH_SCOPE || "read:user public_repo";
 }
 
 function json(value, headers, status = 200) {

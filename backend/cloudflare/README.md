@@ -1,12 +1,22 @@
 # OpenHub Cloudflare Backend
 
-This Cloudflare Worker provides a minimal OAuth backend for OpenHub GitHub App login. It keeps GitHub App secrets on Cloudflare instead of shipping them inside the desktop client.
+This Cloudflare Worker provides a minimal OAuth backend for OpenHub GitHub OAuth sign-in. It keeps the OAuth App client secret on Cloudflare instead of shipping it inside the desktop client.
 
 ## What It Uses
 
 - Cloudflare Workers: HTTP endpoints
 - Cloudflare KV: short-lived OAuth `state`
 - Cloudflare D1: GitHub login sessions
+- GitHub OAuth App Client ID: `Ov23li0G0q2gQuxSPoCF`
+- OAuth scope: `read:user public_repo`
+
+## Secret Setup
+
+```bash
+cd /Users/huluobo/Documents/Codex/2026-05-25/mac-app-github-app/backend/cloudflare
+npx wrangler secret put GITHUB_CLIENT_SECRET
+npm run deploy
+```
 
 ## Endpoints
 
@@ -27,6 +37,6 @@ This Cloudflare Worker provides a minimal OAuth backend for OpenHub GitHub App l
 
 ## Security Notes
 
-- Do not put `GITHUB_CLIENT_SECRET` or GitHub App private keys in the desktop client.
+- Do not put `GITHUB_CLIENT_SECRET` in the desktop client.
 - This MVP stores GitHub access tokens in D1. Before public production use, add token encryption, stricter CORS, session expiration cleanup, and rate limiting.
-- If you later use GitHub App installation tokens, keep the GitHub App private key only in Worker secrets.
+- OpenHub currently uses OAuth user access tokens.

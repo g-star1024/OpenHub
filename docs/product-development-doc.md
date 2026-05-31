@@ -72,23 +72,22 @@
   - Windows 安装包通过 `.github/workflows/windows-tauri.yml` 在 `windows-latest` 环境构建。
   - 本地 macOS 环境只负责源码、前端静态校验、macOS 包和源码包。
 
-## 3.2 GitHub App 配置
+## 3.2 GitHub OAuth App 配置
 
-- GitHub App 名称：`OpenHub`。
-- GitHub App ID：`3910295`。
-- GitHub App Client ID：`Iv23likhU7KoKWmMZmPH`。
+- OAuth App 名称：`OpenHub`。
+- OAuth App Client ID：`Ov23li0G0q2gQuxSPoCF`。
 - GitHub 仓库地址：`https://github.com/g-star1024/OpenHub`。
 - 反馈地址：`https://github.com/g-star1024/OpenHub/issues`。
 - 隐私政策地址：`https://github.com/g-star1024/OpenHub/blob/main/README.md`。
 - Cloudflare Worker 正式域名：`https://openhub.moomer.ccwu.cc`。
-- GitHub App Callback URL：`https://openhub.moomer.ccwu.cc/auth/github/callback`。
-- GitHub App 登录集成状态：
-  - Cloudflare 后端已用于 GitHub App OAuth 回调和 session 中转。
+- OAuth App Callback URL：`https://openhub.moomer.ccwu.cc/auth/github/callback`。
+- GitHub OAuth 登录集成状态：
+  - Cloudflare 后端用于 GitHub OAuth 回调和 session 中转。
   - macOS 客户端已接入 `openhub://auth/callback` URL Scheme。
   - Worker 发起 GitHub 授权时不显式传递 GitHub Web Callback `redirect_uri`，由 GitHub 使用应用后台登记的 Callback URL，避免 Callback URL 严格匹配误判。
-  - 客户端不得内置 GitHub App Client Secret。
-  - 客户端不得内置 GitHub App Private Key。
-  - 当前客户端仅保留 GitHub App 登录，不再提供 Personal Access Token 备用登录。
+  - Worker 授权请求显式传递 `scope=read:user public_repo`，用于读取用户信息、读取公开仓库和执行公开仓库 Star / Unstar。
+  - 客户端不得内置 OAuth App Client Secret。
+  - 当前客户端仅保留 GitHub OAuth 登录，不再提供 Personal Access Token 备用登录。
 
 ## 4. 核心功能
 
@@ -112,7 +111,7 @@
 - 分类入口：更符合中文软件浏览习惯，包含效率办公、开发编程、AI 工具、系统增强、菜单栏工具、终端命令行、网络代理、下载工具、截图录屏、图片设计、音视频、笔记写作、阅读翻译、文件管理、安全隐私、学习教育、数据库、浏览器扩展、游戏娱乐、硬件外设。
 - 平台筛选：Apple Silicon、Intel、Universal、macOS 最低版本。
 - 下载格式筛选：`.dmg`、`.zip`、`.pkg`、`.app`、`.tar.gz`、Homebrew Cask。
-- 空状态要求：推荐页加载失败时展示可恢复状态，包括"重新加载""重新登录 GitHub App""查看离线示例"，不能导致页面布局变形。
+- 空状态要求：推荐页加载失败时展示可恢复状态，包括"重新加载""重新登录 GitHub""查看离线示例"，不能导致页面布局变形。
 
 ### 4.2 搜索
 
@@ -234,16 +233,10 @@
   - 分类列表和搜索列表不展示打开链接、Star / Unstar 等行内功能按钮，保持浏览和选择项目的主流程。
   - 收藏列表不展示额外功能按钮，仓库卡片点击时直接打开对应 GitHub 仓库页面。
   - GitHub Star 同步失败时保留本地收藏状态，并在状态栏提示用户稍后重试。
-  - GitHub App 登录方式需要在 GitHub App 后台开启 `Starring` 读写权限：
-    - GitHub App Settings -> Permissions & events。
-    - Account permissions -> Starring -> Read and write。
-    - **重要**：修改权限后用户必须重新授权安装/登录该 GitHub App，旧 session/token 不会自动获得新权限。如遇到 `403 Resource not accessible by integration` 错误，请前往 https://github.com/settings/installations 找到 OpenHub 并重新授权安装。
-  - 如果返回 HTTP 403，提示用户检查 GitHub App 权限并重新授权：
-    - 区分 `Resource not accessible`（权限未生效）和普通 403 错误。
-    - `Resource not accessible` 时引导用户到 GitHub App 安装设置页重新授权。
-    - classic token 可使用 `public_repo` 或 `repo` 权限。
+  - OAuth App 使用 `read:user public_repo` scope，同步公开仓库 Star / Unstar；如后续要管理私有仓库 Star 或私有仓库代码同步，可切换为 `read:user repo` 并要求用户重新授权。
+  - 如果返回 HTTP 403，提示用户检查 OAuth App scope、退出登录并重新授权。
   - 未登录时只执行本地收藏，并提示登录后可同步 GitHub Star。
-  - GitHub App access token 是唯一登录凭据，同步 Star、读取个人仓库和推送代码时不得读取或依赖备用 Token。
+  - GitHub OAuth access token 是唯一登录凭据，同步 Star、读取个人仓库和推送代码时不得读取或依赖备用 Token。
 - 自定义合集：例如"新 Mac 必装"、"开发环境"、"菜单栏工具"。
 - 可选 iCloud 同步，后续版本实现。
 - 导入导出 JSON，方便迁移。
@@ -290,7 +283,7 @@
   - 下载记录。
   - 本地仓库列表缓存。
   - 分类缓存和搜索结果。
-  - GitHub App session id。
+  - GitHub OAuth session id。
   - GitHub access token。
   - Keychain 中的 `github-session-id`、`github-app-access-token`、历史兼容残留的 `github-fallback-token` 和旧版 `github-token`。
 - 不删除：
@@ -308,7 +301,7 @@
   6. 有 staged 改动时才 commit。
   7. 优先执行原生 `git push`，复用系统 Git 凭据、SSH key、credential helper 和用户已经在 GitHub Desktop / 终端里配置好的认证。
   8. 仅当 push 返回 non-fast-forward / fetch first 时，执行一次 `git pull --rebase --autostash origin <当前分支>` 后再 push。
-  9. 仅当原生 Git 凭据认证失败时，才临时使用 GitHub App token URL 重试 HTTPS push；不能默认绕过本机 Git 凭据。
+  9. 仅当原生 Git 凭据认证失败时，才临时使用 GitHub OAuth token URL 重试 HTTPS push；不能默认绕过本机 Git 凭据。
   10. 刷新 Git 状态，并显示 ahead / behind。
 - 如果本地已经提交但未推送，状态面板必须显示"有本地提交未推送"，不能只显示"工作区干净"。
 - 如果连接 `github.com:443` 失败，提示用户本地提交已存在但尚未推送，并引导检查网络或代理。
@@ -344,20 +337,20 @@
 ### 4.10 GitHub 登录与个人中心
 
 - 只支持 GitHub 账号登录。
-- 正式版主登录方式使用 GitHub App OAuth：
+- 正式版主登录方式使用 GitHub OAuth App：
   - 用户点击登录后打开 GitHub 授权页面。
   - Cloudflare Worker 负责 OAuth callback 和 token exchange。
   - macOS 客户端通过 `openhub://auth/callback` 接收 `session_id`。
   - 客户端调用 `/auth/session` 获取当前会话信息，并将 session id 与访问令牌保存到 macOS Keychain。
-  - GitHub App 授权 URL 不传 OAuth `scope`，权限完全由 GitHub App 后台配置和用户安装授权决定。
+  - GitHub OAuth 授权 URL 传递 `scope=read:user public_repo`，权限由 OAuth App scope 和用户授权决定。
 - 不再提供 GitHub Personal Access Token 登录入口：
-  - 登录入口统一为 GitHub App OAuth。
+  - 登录入口统一为 GitHub OAuth。
   - macOS 使用系统 `ASWebAuthenticationSession`，授权页在当前 app 登录流程内打开，回调不会再拉起新的 OpenHub 实例。
   - Windows/Tauri 使用同一个 Cloudflare OAuth 后端，在当前 Tauri WebView 中跳转授权并带 `session_id` 回到应用页面。
   - 用户输入 token 后调用 GitHub `/user` 验证身份。
   - 登录成功后展示头像、用户名、昵称、个人主页链接。
   - token 存储在本地 macOS Keychain。
-  - 如需 Fork、克隆私有仓库、push 同步，GitHub App 需要安装到目标账号/仓库，并具备对应读写权限。
+  - 如需 Fork、克隆私有仓库或使用 OAuth token 直接 push 私有仓库，需要将 Worker scope 调整为 `read:user repo` 并让用户重新授权；默认代码同步优先使用本机 Git 凭据。
 - 个人中心展示：
   - 我的仓库。
   - 我的仓库检索。
@@ -392,7 +385,7 @@
 - 首版目标：
   - 支持 Windows 10 和 Windows 11。
   - 默认进入推荐分类。
-  - 支持分类浏览、滚动加载、分类预加载、搜索、收藏、下载链接打开、下载记录、设置中心、语言切换、GitHub App 登录和 Star 同步。
+  - 支持分类浏览、滚动加载、分类预加载、搜索、收藏、下载链接打开、下载记录、设置中心、语言切换、GitHub OAuth 登录和 Star 同步。
   - Release 构建必须使用 Windows GUI subsystem，启动客户端时不得弹出 cmd/控制台窗口。
   - NSIS 安装模式默认使用当前用户安装，避免普通安装流程触发管理员控制台。
 - 技术约束：
@@ -442,10 +435,10 @@
   - 同步流程执行 `git add .`、`git commit -m`、`git push`。
   - 同步过程展示阶段进度：准备、暂存、提交、推送、刷新状态、完成。
   - 同步完成后状态栏提示"同步任务完成"。
-  - 默认 push 必须依赖本机 Git 凭据，行为尽量接近 GitHub Desktop / 终端 `git push`；GitHub App token 只作为认证失败后的兜底，不作为默认路径。
+  - 默认 push 必须依赖本机 Git 凭据，行为尽量接近 GitHub Desktop / 终端 `git push`；GitHub OAuth token 只作为认证失败后的兜底，不作为默认路径。
   - 本地仓库扫描时必须从 `git remote get-url origin` 自动解析 `owner/repo`，避免只用文件夹名导致 push 到错误仓库。
   - 同步前清理 stale `.git/index.lock`，避免上一次 git 失败留下锁文件后无法继续同步。
-  - GitHub App 同步私有仓库或推送代码时，需要该 App 已安装到目标账号/仓库，并开启 Repository contents 读写权限。
+  - OAuth token 同步私有仓库或推送代码时，需要使用 `repo` scope；默认公开版 scope 为 `public_repo`。
   - 同步失败时展示 Git 输出，便于用户处理权限、冲突或凭据问题。
 - 代理设置：
   - 设置中心新增代理设置。
@@ -462,17 +455,17 @@
 - 顶部右侧入口文案统一为"创建项目 / Create Project"。
 - 点击后打开 GitHub 新建仓库页面。
 
-### 4.15 Cloudflare GitHub App 后端
+### 4.15 Cloudflare GitHub OAuth 后端
 
 - 后端代码独立放置在 `backend/cloudflare`，不能影响 macOS 和 Windows 客户端打包。
 - 目标：
-  - 支持 GitHub App / OAuth Web flow。
-  - 将 GitHub App Client Secret 保存在 Cloudflare Worker Secret 中。
+  - 支持 GitHub OAuth Web flow。
+  - 将 OAuth App Client Secret 保存在 Cloudflare Worker Secret 中。
   - 使用 KV 保存短期 OAuth state，默认 10 分钟过期。
   - 使用 D1 保存登录 session 和 GitHub user token。
-  - 为正式版客户端提供 GitHub App 登录能力。
-- GitHub App token 格式兼容性：
-  - 当前 OpenHub 使用 GitHub OAuth user-to-server token，不调用 GitHub App installation token 创建接口。
+  - 为正式版客户端提供 GitHub OAuth 登录能力。
+- OAuth token 格式兼容性：
+  - 当前 OpenHub 只使用 OAuth user token。
   - 后端 D1 `access_token` 使用 `TEXT`，macOS 使用 Keychain `String`，Windows 使用 WebView localStorage，均不假设 token 长度或固定前缀。
   - 如果后续接入 installation token，必须兼容新的 `ghs_...` stateless token，不能硬编码 40 位长度、固定前缀或旧格式正则。
 - 部署包要求：
@@ -505,7 +498,7 @@
 
 ### 5.2 GitHub API 注意事项
 
-- 未认证请求限流较低，登录后统一使用 GitHub App session token 提高 API 可用性。
+- 未认证请求限流较低，登录后统一使用 GitHub OAuth session token 提高 API 可用性。
 - 认证后限流提升，但必须安全存储 token，建议使用 macOS Keychain。
 - Search API 有自己的查询限制和排序规则，不适合作为唯一实时数据源。
 - Release Assets 的文件命名没有统一规范，需要做启发式解析。
@@ -865,7 +858,7 @@ recent update score        0-80
 - 收藏和下载空状态固定布局。
 - 中文软件分类体系。
 - 本地缓存。
-- GitHub App 登录与权限设置。
+- GitHub OAuth 登录与权限设置。
 - 基础安全提示。
 
 ### MVP 可延后

@@ -2,9 +2,10 @@
 
 ## Scope
 
-This update covers three major areas: GitHub Star sync fix, download retry with resume support, and code-sync module refactoring, plus full packaging.
+This update covers OAuth App migration, GitHub Star sync fix, download retry with resume support, and code-sync module refactoring, plus full packaging.
 
-- **GitHub Star Sync Fix**: Diagnosed and fixed the 403 "Resource not accessible by integration" error for GitHub App Starring permissions.
+- **GitHub OAuth App Migration**: Replaced the previous GitHub App permission model with OAuth App sign-in for user-level Star / Unstar operations. The Worker now requests `read:user public_repo` and uses OAuth App Client ID `Ov23li0G0q2gQuxSPoCF`.
+- **GitHub Star Sync Fix**: Star sync now uses the OAuth user token. If GitHub returns 403, the client asks the user to confirm OAuth scope and re-authorize instead of pointing to GitHub App installation permissions.
 - **Category Preload Retry**: Failed or empty category preloads now remain retryable and reload automatically when the user opens that category.
 - **Download Retry & Resume**: Added right-click retry button for failed downloads, with HTTP Range-based resumable download support.
 - **Code Sync Module Overhaul**: Complete rewrite of the git sync logic (from earlier session).
@@ -17,16 +18,16 @@ This update covers three major areas: GitHub Star sync fix, download retry with 
 
 ### 1. GitHub Star Sync Fix
 
-**Problem**: Users reported that clicking the star icon in the app saved local favorites successfully but GitHub Star sync failed with error `403 {"message":"Resource not accessible by integration","documentation_url":"..."}`. The user had already set Starring permissions to Read & Write in the GitHub App settings, but the token still lacked permission.
+**Problem**: Users reported that clicking the star icon in the app saved local favorites successfully but GitHub Star sync failed with error `403 {"message":"Resource not accessible by integration","documentation_url":"..."}`.
 
-**Root Cause**: When a GitHub App's permissions are modified after initial installation, existing installations do NOT automatically inherit the new permissions. The user must re-authorize/install the app through OAuth flow for the updated permissions to take effect.
+**Root Cause**: OpenHub needs to perform user-level Star / Unstar actions. OAuth App authorization with an explicit `public_repo` scope matches this flow better than GitHub App installation permissions.
 
 **Fixes Applied**:
 
-- **Improved 403 error message in `GitHubClient.request()`**: When `/user/starred` returns 403, the error now detects whether it's a `Resource not accessible` response (permission not granted to installation) vs a generic 403. For `Resource not accessible`, the message explicitly instructs users to visit https://github.com/settings/installations , click Configure permissions on OpenHub, confirm Starring is Read & write, then re-authorize.
+- **Improved 403 error message in `GitHubClient.request()`**: When `/user/starred` returns 403, the error now asks users to confirm OAuth App scope includes `public_repo`, sign out, and authorize again.
 - **Enhanced error handling in `toggleFavorite()`**: Different HTTP errors now produce different status messages:
   - `403`: "本地收藏已保存，GitHub Star 同步失败：[detailed permission guidance]"
-  - `401/404`: "GitHub Star 同步失败（认证过期），请重新登录 GitHub App"
+  - `401/404`: "GitHub Star 同步失败（认证过期），请重新登录 GitHub"
   - Other: "本地收藏已保存，GitHub Star 暂时无法同步：[error]"
 
 ### 2. Download Retry & Resumable Download
@@ -61,7 +62,7 @@ The entire git sync subsystem was refactored to fix persistent sync failures. Ke
   - stage all files and commit only when staged changes exist,
   - push with native local Git credentials first,
   - run `pull --rebase --autostash` only after a non-fast-forward rejection,
-  - use the GitHub App token URL only as an authentication fallback.
+  - use the GitHub OAuth token URL only as an authentication fallback.
 - Diagnostic tooling (`diagnoseGitRemote`) with UI button
 - Expanded `friendlyGitSyncError` with actionable messages
 
