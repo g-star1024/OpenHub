@@ -423,8 +423,9 @@ async function loadCategory(categoryId, force = false) {
   } catch (error) {
     recordRuntimeError(error, "load-category");
     if (!state.reposByCategory.get(categoryId)?.length) state.reposByCategory.set(categoryId, sampleRepos);
-    state.canLoadMore.set(categoryId, false);
-    setStatus(error.message);
+    state.pagesByCategory.set(categoryId, nextPage === 1 ? 0 : nextPage - 1);
+    state.canLoadMore.set(categoryId, nextPage === 1);
+    setStatus(loadCategoryFailureMessage(error));
   } finally {
     state.loading = false;
     render();
@@ -442,11 +443,25 @@ async function preloadCategories() {
     } catch (error) {
       recordRuntimeError(error, "preload-category");
       if (!state.reposByCategory.get(category.id)?.length) state.reposByCategory.set(category.id, sampleRepos);
-      state.canLoadMore.set(category.id, false);
+      state.pagesByCategory.set(category.id, 0);
+      state.canLoadMore.set(category.id, true);
     }
   }
   setStatus(t("preloadDone"));
   render();
+}
+
+function loadCategoryFailureMessage(error) {
+  const message = String(error?.message || error || "").toLowerCase();
+  if (message.includes("rate limit") || message.includes("403")) {
+    return state.githubAccessToken.trim()
+      ? "GitHub 请求暂时受限，已显示离线示例。请稍后重试或检查当前登录授权。"
+      : "GitHub 匿名请求已达限额，已显示离线示例。登录 GitHub 后可提高加载额度。";
+  }
+  if (message.includes("401") || message.includes("bad credentials")) {
+    return "GitHub 登录状态已过期，已显示离线示例。请重新登录后再加载。";
+  }
+  return "热门项目暂时加载失败，已显示离线示例。请检查网络后重试。";
 }
 
 async function performSearch() {

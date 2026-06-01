@@ -1124,7 +1124,7 @@ final class AppStoreModel: NSObject, ObservableObject, ASWebAuthenticationPresen
             }
             status = "已加载 \(loadedCount)/100 个 GitHub 热门项目"
         } catch {
-            status = "热门项目加载失败，已显示离线示例：\(error.localizedDescription)"
+            status = discoverLoadFailureMessage(error)
             if nextPage == 1, categoryRepositories[currentCategory]?.isEmpty != false {
                 categoryRepositories[currentCategory] = fallbackRepositories(for: currentCategory)
                 if category == currentCategory {
@@ -1134,6 +1134,21 @@ final class AppStoreModel: NSObject, ObservableObject, ASWebAuthenticationPresen
             categoryPages[currentCategory] = max(categoryPages[currentCategory, default: 0], nextPage == 1 ? 0 : nextPage - 1)
             categoryCanLoadMore[currentCategory] = nextPage == 1
         }
+    }
+
+    private func discoverLoadFailureMessage(_ error: Error) -> String {
+        let message = error.localizedDescription
+        let lowercased = message.lowercased()
+        if lowercased.contains("rate limit") || lowercased.contains("http 403") {
+            if activeGitHubToken.isEmpty {
+                return "GitHub 匿名请求已达限额，已显示离线示例。登录 GitHub 后可提高加载额度。"
+            }
+            return "GitHub 请求暂时受限，已显示离线示例。请稍后重试或检查当前登录授权。"
+        }
+        if lowercased.contains("401") || lowercased.contains("bad credentials") {
+            return "GitHub 登录状态已过期，已显示离线示例。请重新登录后再加载。"
+        }
+        return "热门项目暂时加载失败，已显示离线示例。请检查网络后重试。"
     }
 
     func loadMoreDiscoverIfNeeded(current repository: Repository) {
@@ -2298,7 +2313,6 @@ final class AppStoreModel: NSObject, ObservableObject, ASWebAuthenticationPresen
                 updateDownloadJob(jobID, progress: 0, state: .cancelled, savedPath: nil, message: "用户已取消下载")
                 status = "已取消下载：\(asset.name)"
             } else {
-                let nsErr = error as NSError
                 let completedBytes = downloadTasks[jobID]?.countOfBytesReceived ?? 0
                 var partialURL: URL? = nil
                 if completedBytes > 1024 {
@@ -2573,10 +2587,13 @@ struct RootView: View {
                 TopBar()
                 Divider()
                 content
+                    .frame(minWidth: 1060, maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
                 StatusBar()
             }
             .background(Color(nsColor: .windowBackgroundColor))
         }
+        .frame(minWidth: 1320, minHeight: 780)
     }
 
     @ViewBuilder private var content: some View {
@@ -3124,6 +3141,7 @@ struct DownloadsView: View {
             }
         }
         .padding(24)
+        .frame(minWidth: 1060, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 
@@ -3699,44 +3717,87 @@ struct CodeWorkspaceView: View {
             Divider()
 
             VStack(spacing: 0) {
-                HStack {
-                    Text(model.selectedCodeFile?.relativePath ?? "选择文件")
-                        .font(.headline)
-                        .lineLimit(1)
-                    if !model.currentBranch.isEmpty {
-                        Text(model.currentBranch)
-                            .font(.caption.weight(.semibold))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color.accentColor.opacity(0.12))
-                            .clipShape(Capsule())
-                    }
-                    Spacer()
-                    Button {
-                        Task { await model.refreshGitStatus() }
-                    } label: {
-                        Label("Git 状态", systemImage: "arrow.clockwise")
-                    }
-                    Button {
-                        model.saveSelectedCodeFile()
-                    } label: {
-                        Label("保存", systemImage: "square.and.arrow.down")
-                    }
-                    .disabled(model.selectedCodeFile == nil)
-                    Button {
-                        Task { await model.syncSelectedLocalRepository() }
-                    } label: {
-                        Label("同步全部到 GitHub", systemImage: "arrow.up.circle")
-                    }
-                    .disabled(model.selectedLocalRepository == nil)
-                }
-                .padding(14)
+                CodeEditorToolbar()
                 Divider()
                 HighlightedCodeEditor(text: $model.codeText, fileName: model.selectedCodeFile?.relativePath ?? "")
                 Divider()
                 GitBottomPanel()
             }
+            .frame(minWidth: 720, maxWidth: .infinity, maxHeight: .infinity)
         }
+        .frame(minWidth: 1060, maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+struct CodeEditorToolbar: View {
+    @EnvironmentObject private var model: AppStoreModel
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(model.selectedCodeFile?.relativePath ?? "选择文件")
+                .font(.headline)
+                .lineLimit(1)
+                .truncationMode(.middle)
+
+            if !model.currentBranch.isEmpty {
+                CodeStatusPill(text: model.currentBranch, color: .accentColor)
+            }
+
+            if model.gitSyncStateText != "未读取 Git 状态" {
+                CodeStatusPill(text: model.gitSyncStateText, color: statusColor)
+                    .layoutPriority(1)
+            }
+
+            Spacer(minLength: 14)
+
+            Button {
+                Task { await model.refreshGitStatus() }
+            } label: {
+                Label("刷新状态", systemImage: "arrow.clockwise")
+            }
+            .help("重新读取当前仓库的 Git 状态")
+
+            Button {
+                model.saveSelectedCodeFile()
+            } label: {
+                Label("保存文件", systemImage: "square.and.arrow.down")
+            }
+            .disabled(model.selectedCodeFile == nil)
+
+            Button {
+                model.saveSelectedCodeFile()
+                Task { await model.syncSelectedLocalRepository() }
+            } label: {
+                Label("同步到 GitHub", systemImage: "arrow.up.circle")
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(model.selectedLocalRepository == nil || model.isSyncingRepository)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Color(nsColor: .controlBackgroundColor))
+    }
+
+    private var statusColor: Color {
+        if model.gitSyncStateText.contains("干净") { return .green }
+        if model.gitSyncStateText.contains("失败") { return .red }
+        return .orange
+    }
+}
+
+struct CodeStatusPill: View {
+    let text: String
+    let color: Color
+
+    var body: some View {
+        Text(text)
+            .font(.caption.weight(.semibold))
+            .lineLimit(1)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .foregroundStyle(color)
+            .background(color.opacity(0.12))
+            .clipShape(Capsule())
     }
 }
 
@@ -3746,23 +3807,29 @@ struct GitBottomPanel: View {
     @State private var diagnosticText = ""
 
     var body: some View {
-        VStack(spacing: 10) {
-            HStack {
+        VStack(spacing: 12) {
+            HStack(spacing: 12) {
                 Label("Git 工作区", systemImage: "point.3.connected.trianglepath.dotted")
                     .font(.headline)
+                if !model.currentBranch.isEmpty {
+                    CodeStatusPill(text: branchSummary, color: .accentColor)
+                }
+                Text(syncSummary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
                 Spacer()
                 if model.isSyncingRepository || model.syncProgress > 0 {
                     HStack(spacing: 8) {
                         ProgressView(value: model.syncProgress)
-                            .frame(width: 120)
+                            .frame(width: 150)
                         Text(model.syncMessage)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
-                Text(model.gitSyncStateText)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(model.gitSyncStateText == "工作区干净" ? .green : .orange)
+                GitTinyState(text: "文件已保存", systemImage: "checkmark.circle.fill", color: .green)
+                GitTinyState(text: model.gitSyncStateText, systemImage: stateIcon, color: stateColor)
                 Button {
                     Task {
                         if let local = model.selectedLocalRepository {
@@ -3777,30 +3844,39 @@ struct GitBottomPanel: View {
                 .help("诊断 Git 远程连接")
                 .disabled(model.selectedLocalRepository == nil)
             }
-            HStack(alignment: .top, spacing: 12) {
-                GitInfoCard(title: "状态", text: model.gitStatusText.isEmpty ? "暂无未提交变更" : model.gitStatusText, color: .blue)
-                GitInfoCard(title: "Diff", text: model.gitDiffText.isEmpty ? "暂无 diff" : model.gitDiffText, color: .purple)
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("提交")
-                        .font(.caption.weight(.semibold))
-                    TextField("Commit message", text: $model.commitMessage)
-                        .textFieldStyle(.roundedBorder)
-                    Button {
-                        model.saveSelectedCodeFile()
-                        Task { await model.syncSelectedLocalRepository() }
-                    } label: {
-                        Label("保存并同步全部改动", systemImage: "arrow.up.circle")
-                            .frame(maxWidth: .infinity)
+            GeometryReader { proxy in
+                let panelWidth = max(220, (proxy.size.width - 24) / 3)
+                HStack(alignment: .top, spacing: 12) {
+                    GitInfoCard(title: "变更", subtitle: changeSummary, text: model.gitStatusText.isEmpty ? "暂无未提交变更" : model.gitStatusText, color: .blue)
+                        .frame(width: panelWidth, height: 136)
+                    GitInfoCard(title: "Diff 预览", subtitle: diffSummary, text: model.gitDiffText.isEmpty ? "暂无 diff" : model.gitDiffText, color: .purple)
+                        .frame(width: panelWidth, height: 136)
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("提交与同步")
+                            .font(.caption.weight(.semibold))
+                        TextField("Update from OpenHub", text: $model.commitMessage)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 14, weight: .medium))
+                            .padding(.vertical, 2)
+                        Button {
+                            model.saveSelectedCodeFile()
+                            Task { await model.syncSelectedLocalRepository() }
+                        } label: {
+                            Label("提交并同步", systemImage: "arrow.up.circle")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(model.selectedLocalRepository == nil || model.isSyncingRepository)
+                        Spacer(minLength: 0)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(model.selectedLocalRepository == nil)
+                    .padding(12)
+                    .frame(width: panelWidth, height: 136, alignment: .topLeading)
+                    .background(Color(nsColor: .windowBackgroundColor))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.black.opacity(0.08)))
                 }
-                .padding(12)
-                .frame(width: 260, height: 128, alignment: .topLeading)
-                .background(Color(nsColor: .windowBackgroundColor))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.black.opacity(0.08)))
             }
+            .frame(height: 136)
         }
         .padding(12)
         .background(Color(nsColor: .controlBackgroundColor))
@@ -3831,10 +3907,63 @@ struct GitBottomPanel: View {
             .frame(width: 520, height: 420)
         }
     }
+
+    private var branchSummary: String {
+        if model.gitSyncStateText.contains("本地提交未推送") {
+            return "\(model.currentBranch) ahead"
+        }
+        if model.gitSyncStateText.contains("落后") {
+            return "\(model.currentBranch) behind"
+        }
+        return model.currentBranch
+    }
+
+    private var syncSummary: String {
+        if model.isSyncingRepository {
+            return "正在同步，请保持窗口打开"
+        }
+        if model.gitSyncStateText.contains("本地提交未推送") {
+            return "有本地提交未推送到 GitHub"
+        }
+        if model.gitSyncStateText.contains("未提交") {
+            return "有文件改动，提交后可同步"
+        }
+        if model.gitSyncStateText.contains("失败") {
+            return "上次状态读取失败，请刷新或诊断"
+        }
+        if model.gitSyncStateText == "未读取 Git 状态" {
+            return "选择仓库后读取 Git 状态"
+        }
+        return "当前仓库状态正常"
+    }
+
+    private var changeSummary: String {
+        let lines = model.gitStatusText.split(separator: "\n").filter { !$0.hasPrefix("##") }
+        if lines.isEmpty { return "无文件变更" }
+        return "\(lines.count) 个条目"
+    }
+
+    private var diffSummary: String {
+        let trimmed = model.gitDiffText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "无 diff" : "已生成摘要"
+    }
+
+    private var stateColor: Color {
+        if model.gitSyncStateText.contains("干净") { return .green }
+        if model.gitSyncStateText.contains("失败") { return .red }
+        return .orange
+    }
+
+    private var stateIcon: String {
+        if model.gitSyncStateText.contains("干净") { return "checkmark.circle.fill" }
+        if model.gitSyncStateText.contains("失败") { return "xmark.circle.fill" }
+        return "exclamationmark.triangle.fill"
+    }
 }
 
 struct GitInfoCard: View {
     let title: String
+    let subtitle: String
     let text: String
     let color: Color
 
@@ -3845,6 +3974,9 @@ struct GitInfoCard: View {
                 Text(title)
                     .font(.caption.weight(.semibold))
                 Spacer()
+                Text(subtitle)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
             ScrollView {
                 Text(text)
@@ -3855,10 +3987,23 @@ struct GitInfoCard: View {
             }
         }
         .padding(12)
-        .frame(maxWidth: .infinity, minHeight: 128, maxHeight: 128, alignment: .topLeading)
+        .frame(maxWidth: .infinity, minHeight: 136, idealHeight: 136, maxHeight: 136, alignment: .topLeading)
         .background(Color(nsColor: .windowBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.black.opacity(0.08)))
+    }
+}
+
+struct GitTinyState: View {
+    let text: String
+    let systemImage: String
+    let color: Color
+
+    var body: some View {
+        Label(text, systemImage: systemImage)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(color)
+            .lineLimit(1)
     }
 }
 

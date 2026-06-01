@@ -7,6 +7,7 @@ This update covers OAuth App migration, GitHub Star sync fix, download retry wit
 - **GitHub OAuth App Migration**: Replaced the previous GitHub App permission model with OAuth App sign-in for user-level Star / Unstar operations. The Worker now requests `read:user public_repo` and uses OAuth App Client ID `Ov23li0G0q2gQuxSPoCF`.
 - **GitHub Star Sync Fix**: Star sync now uses the OAuth user token. If GitHub returns 403, the client asks the user to confirm OAuth scope and re-authorize instead of pointing to GitHub App installation permissions.
 - **Category Preload Retry**: Failed or empty category preloads now remain retryable and reload automatically when the user opens that category.
+- **Production Code Workspace UI**: Redesigned the code module with a lighter editor toolbar, branch/status pills, a clearer Git workspace header, compact change/diff panels, and a borderless commit message field.
 - **Download Retry & Resume**: Added right-click retry button for failed downloads, with HTTP Range-based resumable download support.
 - **Code Sync Module Overhaul**: Complete rewrite of the git sync logic (from earlier session).
 - **macOS App Packaging**: Local build, ad-hoc signing, DMG and ZIP output.
@@ -65,6 +66,18 @@ The entire git sync subsystem was refactored to fix persistent sync failures. Ke
   - use the GitHub OAuth token URL only as an authentication fallback.
 - Diagnostic tooling (`diagnoseGitRemote`) with UI button
 - Expanded `friendlyGitSyncError` with actionable messages
+
+### 4. Production Code Workspace UI
+
+- Replaced the heavy top-right toolbar buttons with `刷新状态`, `保存文件`, and the primary `同步到 GitHub` action.
+- Added branch and Git-state pills beside the file name so `main`, `有未提交变更`, and `有本地提交未推送` are visible before syncing.
+- Redesigned the bottom Git workspace into a compact status header plus three panels: `变更`, `Diff 预览`, and `提交与同步`.
+- Changed the commit message input to a borderless lightweight field and removed the `提交说明` label plus the bottom flow hint.
+- Fixed the three bottom panels to a stable height and equal-width layout so status/diff text does not resize the workspace.
+- Removed `idealWidth` from the Git workspace panels and divided the available width with `GeometryReader`, preventing app width changes when switching to Downloads or other sections.
+- Unified the main commit action as `提交并同步`.
+- Rebuilt macOS `.icns` and Windows/Tauri icon assets from the latest `OpenHub_icon.png`, normalized to a standard 1024x1024 source.
+- Improved anonymous GitHub rate-limit copy: unauthenticated 403/rate-limit failures now tell users that offline examples are shown and GitHub sign-in raises the loading quota.
 
 ### Swift 6 Concurrency Fixes
 
