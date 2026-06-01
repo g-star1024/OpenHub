@@ -44,6 +44,6 @@ windows/openhub-tauri/src-tauri/target/release/bundle/
 - Account center uses a table switch between My Repositories and Starred Repositories, with 20 items initially and 20 more loaded when the list scrolls to the bottom.
 - Settings includes Clear Cache with confirmation. It clears WebView local settings, favorites, downloads, repository caches, category/search caches, and GitHub OAuth sign-in data without deleting downloaded files or local clone directories.
 - Settings can export a JSON runtime error report collected from status errors, window errors, and unhandled promise rejections.
-- `src-tauri/tauri.conf.json` keeps `icons/icon.ico` in the bundle icon list for NSIS / MSI shortcuts, and Rust startup sets the runtime window icon from `icons/icon.png`.
+- `src-tauri/tauri.conf.json` keeps `icons/icon.ico` and PNG sizes in the bundle icon list for the app window, NSIS / MSI installers, and shortcuts.
 - Release builds use `windows_subsystem = "windows"` to avoid a console window, and NSIS uses current-user install mode to reduce administrator prompts.
 - The current Windows client stores settings in browser local storage inside the Tauri WebView. A future iteration should migrate the GitHub OAuth session token to a Tauri secure storage plugin.
